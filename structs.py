@@ -114,7 +114,7 @@ class Tree:
         def rec(node, rfunc):
             rsum = Variable(torch.zeros(node.hsize,))
             for child in node.children[1:]:
-                rsum += rec(child, rfunc)
+                rsum.add_(rec(child, rfunc))
 
             return rfunc(node.h_v, rsum)
         return rec(root, rfunc)

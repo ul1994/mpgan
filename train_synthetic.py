@@ -78,10 +78,9 @@ for its in range(ITERS):
     model.readout.zero_grad()
     # TODO: zero message passer
     # TODO: zero generator
-    gen_loss.backward()
+    gen_loss.backward(retain_graph=True)
     gen_opt.step()
-
-
+    print('L/Genera %.3f' % gen_loss.item())
 
     # -- Discrimination Training --
     disc_labels = torch.tensor(discrim_labels)
@@ -92,3 +91,4 @@ for its in range(ITERS):
     model.discrim.zero_grad()
     discrim_loss.backward()
     discrim_opt.step()
+    print('L/Discrim %.3f' % discrim_loss.item())
