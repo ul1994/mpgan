@@ -70,10 +70,10 @@ for its in range(ITERS):
     # NOTE: Train w/ objective of fooling discrim
     all_readouts = torch.cat(real_readouts + fake_readouts, 0)
     # print(all_readouts.size())
-    fooling_labels = torch.tensor(fooling_labels)
+    gen_labels = torch.tensor(fooling_labels)
     dhat_gen = model.discrim(all_readouts)
     # print(dhat_gen.size(), fooling_labels.size())
-    gen_loss = F.nll_loss(dhat_gen, fooling_labels)
+    gen_loss = F.nll_loss(dhat_gen, gen_labels)
 
     model.readout.zero_grad()
     # TODO: zero message passer
@@ -84,10 +84,10 @@ for its in range(ITERS):
 
 
     # -- Discrimination Training --
-    discrim_labels = torch.tensor(discrim_labels)
+    disc_labels = torch.tensor(discrim_labels)
     # print(discrim_labels.size())
     dhat_discrim = model.discrim(all_readouts)
-    discrim_loss = F.nll_loss(dhat_discrim, discrim_labels)
+    discrim_loss = F.nll_loss(dhat_discrim, disc_labels)
 
     model.discrim.zero_grad()
     discrim_loss.backward()

@@ -112,15 +112,11 @@ class Tree:
         # TODO: Test against graph-level readout
 
         def rec(node, rfunc):
-            if len(node.children) == 0:
-                empty_sum = torch.zeros(node.hsize,)
-                return rfunc(node.h_v, empty_sum)
-            else:
-                rsum = rec(node.children[0], rfunc)
-                for child in node.children[1:]:
-                    rsum += rec(child, rfunc)
+            rsum = Variable(torch.zeros(node.hsize,))
+            for child in node.children[1:]:
+                rsum += rec(child, rfunc)
 
-                return rfunc(node.h_v, rsum)
+            return rfunc(node.h_v, rsum)
         return rec(root, rfunc)
 
 from random import shuffle, randint, random
