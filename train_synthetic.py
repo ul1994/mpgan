@@ -20,8 +20,15 @@ TARGET_TREEDEF = TallFew
 
 model = Model(hsize=HSIZE)
 
-discrim_opt = optim.Adam([
+gen_opt = optim.Adam([
     { 'params': model.readout.parameters() },
+    # TODO: message passer
+    # TODO: generator
+], lr=LR, weight_decay=1e-4)
+
+discrim_opt = optim.Adam([
+    # NOTE: Just discriminiator?
+    # { 'params': model.readout.parameters() },
     { 'params': model.discrim.parameters() },
 ], lr=LR, weight_decay=1e-4)
 
@@ -32,17 +39,19 @@ for its in range(ITERS):
 
     # TODO: Get a bunch of trees and from "true distrib"
 
+    fooling_labels = []
     discrim_labels = []
     real_readouts = []
     for _ in range(bhalf):
         root = TARGET_TREEDEF()
         R_G = Tree.readout(root, model.readout)
-        real_readouts.append(R_G)
-        discrim_labels.append([1, 0]) # real
+        real_readouts.append(R_G.unsqueeze(0))
+        discrim_labels.append(0) # real
+        fooling_labels.append(0) # actual real
 
-    # TODO: Generate some tress, each within timestep:STEPS
     fake_readouts = []
     for _ in range(bhalf):
+        # TODO: Generate some tress, each within timestep:STEPS
         root = Node(hsize=HSIZE)
 
         for time in range(STEPS):
@@ -53,15 +62,33 @@ for its in range(ITERS):
             pass
 
         R_G = Tree.readout(root, model.readout)
-        fake_readouts.append(R_G)
-        discrim_labels.append([0, 1]) # fake
+        fake_readouts.append(R_G.unsqueeze(0))
+        discrim_labels.append(1) # fake
+        fooling_labels.append(0) # fool real
 
-    # TODO: Discrimination Training
+
+    # NOTE: Train w/ objective of fooling discrim
+    all_readouts = torch.cat(real_readouts + fake_readouts, 0)
+    # print(all_readouts.size())
+    fooling_labels = torch.tensor(fooling_labels)
+    dhat_gen = model.discrim(all_readouts)
+    # print(dhat_gen.size(), fooling_labels.size())
+    gen_loss = F.nll_loss(dhat_gen, fooling_labels)
+
+    model.readout.zero_grad()
+    # TODO: zero message passer
+    # TODO: zero generator
+    gen_loss.backward()
+    gen_opt.step()
 
 
-    # disc_batch = []
-    # dhat = model.discrim(disc_batch)
 
-    # discrim_loss = F.nll_loss(dhat, discrim_labels)
-    # discrim_loss.backward()
-    # discrim_opt.step()
+    # -- Discrimination Training --
+    discrim_labels = torch.tensor(discrim_labels)
+    # print(discrim_labels.size())
+    dhat_discrim = model.discrim(all_readouts)
+    discrim_loss = F.nll_loss(dhat_discrim, discrim_labels)
+
+    model.discrim.zero_grad()
+    discrim_loss.backward()
+    discrim_opt.step()

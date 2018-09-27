@@ -89,7 +89,7 @@ class DiscrimNet(nn.Module):
             nn.Linear(1024, 2),
         ]
 
-    def forward(self, hvert, children_readout):
+    def forward(self, x):
         x = F.relu(self.fcs[0](x))
         x = F.relu(self.fcs[1](x))
         x = F.relu(self.fcs[2](x))
