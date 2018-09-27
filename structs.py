@@ -12,7 +12,7 @@ class Node:
 
     idcounter = 0
 
-    def __init__(self, height=0, hsize=5, spec=None):
+    def __init__(self, height=0, hsize=5, spec=None, grads=True):
         self.parent = None
         self.id = '%d' % Node.idcounter
         Node.idcounter += 1
@@ -22,7 +22,7 @@ class Node:
         self.parent = None
         self.height = height
 
-        self.h_v = Variable(torch.rand(hsize,))
+        self.h_v = Variable(torch.rand(hsize,), requires_grad=grads)
 
         if spec is not None:
             self.id = spec['id']
@@ -123,7 +123,7 @@ from random import shuffle, randint, random
 
 class ShortMany(Node):
     def __init__(self, height=0, endh=None):
-        super().__init__(height=height)
+        super().__init__(height=height, grads=False)
 
         if endh is None:
             endh = randint(2, 3) # random height
@@ -137,7 +137,7 @@ class ShortMany(Node):
 
 class TallFew(Node):
     def __init__(self, height=0, endh=None):
-        super().__init__(height=height)
+        super().__init__(height=height, grads=False)
 
         if endh is None:
             endh = randint(4, 6) # random height
