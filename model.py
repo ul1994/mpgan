@@ -86,7 +86,7 @@ class DiscrimNet(nn.Module):
             nn.Linear(hsize, 1024),
             nn.Linear(1024, 1024),
             nn.Linear(1024, 1024),
-            nn.Linear(1024, 2),
+            nn.Linear(1024, 1),
         ]
 
     def forward(self, x):
@@ -95,7 +95,7 @@ class DiscrimNet(nn.Module):
         x = F.relu(self.fcs[2](x))
         x = self.fcs[3](x)
 
-        return F.log_softmax(x, dim=1)
+        return nn.Sigmoid()(x)
 
 class Model:
     def __init__(self, hsize):
