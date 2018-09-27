@@ -2,29 +2,32 @@
 import numpy as np
 import json
 
-# some node props are encoded into feature vectors
-HEIGHT_IND = 0
+import torch
+import torch.nn as nn
+from torch.autograd import Variable
+import torch.optim as optim
+import torch.nn.functional as F
 
 class Node:
 
     idcounter = 0
 
-    def __init__(self, height=0, maxfeatures=100, spec=None):
+    def __init__(self, height=0, hsize=5, spec=None):
         self.parent = None
         self.id = '%d' % Node.idcounter
         Node.idcounter += 1
         self.children = []
-        self.features = np.zeros(maxfeatures)
-        self.fts = self.features
+        self.hsize = hsize
 
         self.parent = None
-        self.set_height(height)
+        self.height = height
+
+        self.h_v = Variable(torch.rand(hsize,))
 
         if spec is not None:
             self.id = spec['id']
-            self.features = np.array(spec['features'], dtype=np.float32)
-            self.fts = self.features
-            self.set_height(spec['height'])
+            self.h_v = Variable(torch.tensor(spec['h_v']))
+            self.height = spec['height']
 
             for childspec in spec['children']:
                 child = Node(spec=childspec)
@@ -32,9 +35,9 @@ class Node:
 
     def json(self):
         obj = {
-            'features': self.fts.tolist(),
+            'h_v': self.h_v.numpy().tolist(),
             'id': self.id,
-            'height':self.height(),
+            'height':self.height,
             'children': [],
         }
 
@@ -43,23 +46,17 @@ class Node:
 
         return obj
 
-    def set_height(self, val):
-        self.fts[HEIGHT_IND] = val
-
-    def height(self):
-        return self.fts[HEIGHT_IND]
-
     def add(self, node=None):
         if node is None:
-            node = Node(height=self.height()+1)
+            node = Node(height=self.height+1)
         else:
-            node.set_height(self.height()+1)
+            node.height = self.height+1
         node.parent = self
 
         self.children.append(node)
 
     def name(self):
-        return '%s/%d' % (self.id, self.height())
+        return '%s/%d' % (self.id, self.height)
         # return '%s' % (self.id)
 
 class Tree:
@@ -110,6 +107,22 @@ class Tree:
         with open('%s.json' % fname, 'w') as fl:
             json.dump(jsonobj, fl, indent=4)
 
+    @staticmethod
+    def readout(root, rfunc):
+        # TODO: Test against graph-level readout
+
+        def rec(node, rfunc):
+            if len(node.children) == 0:
+                empty_sum = torch.zeros(node.hsize,)
+                return rfunc(node.h_v, empty_sum)
+            else:
+                rsum = rec(node.children[0], rfunc)
+                for child in node.children[1:]:
+                    rsum += rec(child, rfunc)
+
+                return rfunc(node.h_v, rsum)
+        return rec(root, rfunc)
+
 from random import shuffle, randint, random
 
 class ShortMany(Node):
@@ -124,7 +137,7 @@ class ShortMany(Node):
             return
 
         for ii in range(randint(2, 3)):
-            self.add(ShortMany(height=self.height()+1, endh=endh))
+            self.add(ShortMany(height=self.height+1, endh=endh))
 
 class TallFew(Node):
     def __init__(self, height=0, endh=None):
@@ -141,7 +154,7 @@ class TallFew(Node):
         prob = random()
         nchild = 2 if prob < 0.15 else 1
         for ii in range(nchild):
-            self.add(TallFew(height=self.height()+1, endh=endh))
+            self.add(TallFew(height=self.height+1, endh=endh))
 
 if __name__ == '__main__':
 
