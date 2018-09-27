@@ -42,9 +42,7 @@ fake_labels = Variable(torch.zeros(bhalf, 1), requires_grad=False)
 
 for its in range(ITERS):
 
-	# TODO: Generation Training
-
-	# TODO: Get a bunch of trees and from "true distrib"
+	# TODO: Get a bunch of trees from "true distrib"
 
 	fooling_labels = []
 	discrim_labels = []
@@ -56,10 +54,8 @@ for its in range(ITERS):
 		discrim_labels.append(0) # real
 		fooling_labels.append(0) # actual real
 
-	gen_opt.zero_grad()
-	# model.readout.zero_grad()
-	# TODO: zero message passer
-	# TODO: zero generator
+	model.zero_common()
+	model.zero_generator()
 
 	fake_readouts = []
 	for _ in range(bhalf):
@@ -68,6 +64,7 @@ for its in range(ITERS):
 
 		for time in range(STEPS):
 			# TODO: message passing
+			# TODO: update w/ message
 			# TODO: noise
 			# TODO: generation
 			# R_G = Tree.readout(root, model.readout)
@@ -79,7 +76,6 @@ for its in range(ITERS):
 		fooling_labels.append(0) # fool real
 
 	# -- Generator Training --
-	# NOTE: Train w/ objective of fooling discrim
 	fake_readouts = torch.cat(fake_readouts, 0)
 	gen_loss = adversarial_loss(model.discrim(fake_readouts), real_labels)
 	gen_loss.backward(retain_graph=True)
@@ -87,7 +83,8 @@ for its in range(ITERS):
 	print('Generate/L: %.3f' % gen_loss.item())
 
 	# -- Discrimination Training --
-	discrim_opt.zero_grad()
+	# NOTE: Readout gradients carry over to discriminiator training
+	model.zero_discrim()
 
 	real_readouts = torch.cat(real_readouts, 0)
 	real_loss = adversarial_loss(model.discrim(real_readouts), real_labels)

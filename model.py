@@ -102,6 +102,20 @@ class Model:
         self.readout = ReadoutNet(hsize=hsize)
         self.discrim = DiscrimNet(hsize=hsize)
 
+    def zero_common(self):
+        self.readout.zero_grad()
+
+    def zero_generator(self):
+        # self.discrim
+        # TODO: zero mpass
+        # TODO: zero update
+        #TODO :zero generator
+        pass
+
+    def zero_discrim(self):
+        self.discrim.zero_grad()
+
+
 if __name__ == '__main__':
     import math
     from structs import *
