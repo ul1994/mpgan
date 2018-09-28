@@ -24,33 +24,40 @@ import numpy as np
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 # HSIZE = 5
-ZSIZE = 100
+ZSIZE = 50
 # ITERS = 1
-LSTM_SIZE=512
+LSTM_SIZE=1024
 BSIZE = 64
-LR = 5e-5
+LR = 2e-4
 all_letters = 'abcdefghijklmnopqrstuvwxyz'
-# n_letters = len(all_letters) + 1 # Plus EOS marker
 n_letters = len(all_letters)
-# adversarial_loss = torch.nn.BCELoss().to(device)
-adversarial_loss = torch.nn.BCEWithLogitsLoss().to(device)
-MAXLEN = 4
+adversarial_loss = torch.nn.BCELoss().to(device)
+MAXLEN = 1
 
 
 spawn = SpawnNet(hsize=n_letters, zsize=ZSIZE, lstm_size=LSTM_SIZE).to(device)
-readout = ReadNet(hsize=n_letters).to(device)
 discrim = DiscrimNet(hsize=n_letters).to(device)
 
 gen_opt = optim.Adam([
 	{ 'params': spawn.parameters() },
-	# { 'params': readout.parameters() }
 	# NOTE: dont tune readout here; it'll optimize to fool the discrim!
 ], lr=LR, weight_decay=1e-4)
 
+# Readout aligns with discriminator
+#  The goal of readout is to extract as much distinguishing info
+#   from any samples shown
 discrim_opt = optim.Adam([
-	{ 'params': readout.parameters() },
-	{ 'params': discrim.parameters() }
+	# { 'params': readout.parameters() },
+	{ 'params': discrim.parameters() },
 ], lr=LR, weight_decay=1e-4)
+
+def score(guess, real):
+	guess = (guess.cpu() > 0.5).squeeze()\
+		.type(torch.FloatTensor)
+	correct = (guess == real.squeeze().cpu()).sum()
+	correct = correct.numpy() / guess.cpu().size(0)
+	assert correct <= 1.0
+	return correct
 
 def toTensor(string):
 	# (seqlen x batch x embedlen)
@@ -69,12 +76,13 @@ def toTensor(string):
 def drawSample(verbose=False):
 	# strlen = randint(5, MAXLEN)
 	strlen = MAXLEN
-	hat1 = 'cd'
+	hat1 = 'cdef'
 
 	line = ''
-	for ii in range(strlen-1):
+	for ii in range(strlen):
+		# ind = 0 if random() > 0.8 else
 		line += hat1[randint(0, len(hat1)-1)]
-	line += 'x'
+	# line += 'x'
 
 	if verbose: print(line)
 
@@ -106,18 +114,30 @@ bhalf = BSIZE // 2
 real_labels = Variable(torch.ones(bhalf, 1), requires_grad=False).to(device)
 fake_labels = Variable(torch.zeros(bhalf, 1), requires_grad=False).to(device)
 
-def get_readout(sample):
+def get_readout(sample, detach=False):
+	return sample[0].unsqueeze(0)
 	# sample: h_1, h_2, ..., h_T
-	slen = len(sample)
+	# slen = len(sample)
 
-	rsum = Variable(torch.zeros(n_letters)).to(device)
-	for ii in range(slen):
-		r_t = readout(sample[ii])
-		rsum.add_(r_t)
+	# rsum = Variable(torch.zeros(n_letters)).to(device)
+	# for ii in range(slen):
+	# 	one = sample[ii]
+	# 	# if detach: one = one.detach()
+	# 	# grad before readout (i.e.spawn) should not factor into
+	# 	#  training the discrim
 
-	return rsum.unsqueeze(0)
+	# 	r_t = readout(one)
+	# 	rsum.add_(r_t)
 
+	# return rsum.unsqueeze(0)
+
+disc_score = 1.0
+genmode = False
 for iter in range(1, n_iters + 1):
+
+	spawn.zero_grad()
+	# readout.zero_grad()
+
 	real_readouts = []
 	for _ in range(bhalf):
 		sample, as_string = drawSample(verbose=False)
@@ -125,12 +145,14 @@ for iter in range(1, n_iters + 1):
 		real_readouts.append(R_G)
 
 	fake_readouts = []
+	fake_readouts_detached = []
 	for _ in range(bhalf):
 		# target_line_tensor.unsqueeze_(-1)
 		state = spawn.init_state(device=device)
 
 		# sample level distribution
 		noise_sample = spawn.init_noise(device=device)
+		# noise_sample = spawn.init_zeros(device=device)
 
 		fake_hs = []
 		for lii in range(MAXLEN):
@@ -145,44 +167,65 @@ for iter in range(1, n_iters + 1):
 		R_G = get_readout(fake_hs)
 		fake_readouts.append(R_G)
 
-	# print(fake_readouts[0])
-	# print(real_readouts[0])
-	fake_readouts = torch.cat(fake_readouts, 0).to(device)
-	real_readouts = torch.cat(real_readouts, 0).to(device)
+		# R_G_detached = get_readout(fake_hs, detach=True)
+		# fake_readouts_detached.append(R_G_detached)
 
-	# print(real_readouts[0])
-	# print(fake_readouts[0])
+	if iter % 500 == 0:
+		print(fake_readouts[0])
+		print(real_readouts[0])
+		input(':')
 
-	# if iter > 50 and iter % 3 == 0:
-	# if iter > 100 and iter % 10 == 0:
+	__fake_readouts = fake_readouts
+	fake_readouts =torch.cat(fake_readouts, 0).to(device)
+	# fake_readouts_detached = torch.cat(fake_readouts_detached, 0).to(device)
+	real_readouts =torch.cat(real_readouts, 0).to(device)
 
-	if iter % 10  == 0:
+	if iter % 5  == 0:
 		print('[%d] Sample: %s  vs  %s' % (
 			iter,
 			toString(fake_hs),
 			as_string))
 
 	# -- Generator Training --
-	if iter % 100 > 50:
-		spawn.zero_grad()
-		gen_loss = adversarial_loss(discrim(fake_readouts), real_labels)
-		gen_loss.backward(retain_graph=True)
-		gen_opt.step()
-		print('[%d] Generate/L: %.5f      (fooling: lower is better)' % (
-			iter, gen_loss.item(),))
-		continue
+
+	if iter % 100 == 1:
+		samples = []
+		for example in __fake_readouts:
+			samples.append(toString(example))
+		print(', '.join(samples))
+		assert len(samples) > 0
+
+	gen_loss = adversarial_loss(discrim(fake_readouts), real_labels)
+	gen_loss.backward(retain_graph=True)
+	gen_opt.step()
+	# print('[%d] Generate/L: %.5f      (fooling: lower is better)' % (
+	# 	iter, gen_loss.item(),))
 
 	# -- Discrimination Training --
 	# NOTE: Readout gradients carry over to discriminiator training
-
-	readout.zero_grad()
 	discrim.zero_grad()
-	real_loss = adversarial_loss(discrim(real_readouts), real_labels)
-	fake_loss = adversarial_loss(discrim(fake_readouts.detach()), fake_labels)
+
+	real_guesses = discrim(real_readouts)
+	real_loss = adversarial_loss(real_guesses, real_labels)
+	fake_guesses = discrim(fake_readouts.detach())
+	fake_loss = adversarial_loss(fake_guesses, fake_labels)
+
+	real_score = score(real_guesses, real_labels)
+	fake_score = score(fake_guesses, fake_labels)
+	disc_score = (real_score + fake_score) / 2
+	assert disc_score <= 1.0
+
 	discrim_loss = (real_loss + fake_loss) / 2
 	discrim_loss.backward()
 	discrim_opt.step()
 
-	print('[%d] Discrim/L : %.5f      (discrim: high if generator fools well)' % (
-		iter, discrim_loss.item(),))
+	# print('[%d] Discrim/L : %.5f  Score: %.2f' % (
+	# 	iter,
+	# 	discrim_loss.item(),
+	# 	disc_score))
 
+	print('[%d] Generate/L: %.5f  Discrim/L : %.5f  Score: %.2f ' % (
+		iter,
+		gen_loss.item(),
+		discrim_loss.item(),
+		disc_score), end='\r')

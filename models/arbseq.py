@@ -7,6 +7,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torchvision import datasets, transforms
 from torch.autograd import Variable
+import numpy as np
 
 class SpawnNet(nn.Module):
 	# Function of steps' embedding, and sampling from noise Z.
@@ -17,50 +18,30 @@ class SpawnNet(nn.Module):
 	def __init__(self, hsize, zsize=20, lstm_size=128):
 		super(SpawnNet, self).__init__()
 
-		self.fcs = nn.ModuleList([
-			# In arbseq case, each observation is noise alone
-			nn.Linear(zsize, 256),
-			nn.Linear(256, 512),
-			nn.Linear(512, 1024),
-			nn.Linear(1024, 1024),
-			nn.Linear(1024, lstm_size),
-		])
+		def block(in_feat, out_feat, normalize=True):
+			layers = [nn.Linear(in_feat, out_feat)]
+			# if normalize:
+			# 	layers.append(nn.BatchNorm1d(out_feat, 0.8))
+			layers.append(nn.LeakyReLU(0.2, inplace=True))
+			return layers
 
-		self.hout = nn.ModuleList([
-			nn.Linear(lstm_size + zsize, 512),
-			nn.Linear(512, 1024),
-			nn.Linear(1024, 1024),
-			nn.Linear(1024, hsize)
-		])
+		self.model = nn.Sequential(
+			*block(zsize, 128, normalize=False),
+			*block(128, 128),
+			*block(128, 128),
+			*block(128, 128),
+			nn.Linear(128, hsize),
+			nn.Sigmoid()
+		)
 
-		self.lstm = nn.LSTM(lstm_size, lstm_size)
 		self.lstm_size = lstm_size
 		self.noise_size = zsize
 
 	def forward(self, noise_sample, noise_iter, state):
-		# state enocdes the progress in sequence
-		# input = torch.cat([noise])
-		input = noise_sample
-		x = F.relu(self.fcs[0](input))
-		x = F.relu(self.fcs[1](x))
-		x = F.relu(self.fcs[2](x))
-		x = F.relu(self.fcs[3](x))
-		x = F.relu(self.fcs[4](x))
-
-		# output for this timestep: output at T , cell state
-		# The axes semantics are (num_layers, minibatch_size, state_dim)
-		t_output, state = self.lstm(x, state) # TODO: reassign hidden
-
-		# t_output = F.relu(t_output)
-
-		x = torch.cat([t_output, noise_iter], -1)
-
-		# h_v itself can be a termination character, iwc inference stops
-		x = F.relu(self.hout[0](x))
-		x = F.relu(self.hout[1](x))
-		x = F.relu(self.hout[2](x))
-		x = torch.tanh(self.hout[3](x))
-
+		# noise_sample = noise_sample.unsqueeze(0)
+		# print(noise_sample.size())
+		x = self.model(noise_sample)
+		# print(x.size())
 		return x, state
 
 	def init_state(self, device='cpu'):
@@ -71,11 +52,9 @@ class SpawnNet(nn.Module):
 		# return torch.zeros(1, 1, self.lstm_size).to(device)
 
 	def init_noise(self, size=None, device='cpu'):
-		# return Variable(torch.rand((1, 1, self.noise_size)).to(device))
-		return Variable(
-			torch.FloatTensor(1, 1, self.noise_size if size is None else size) \
-				.uniform_(-1, 1)).to(device)
-
+		if size is None: size = self.noise_size
+		noise = Variable(torch.randn(size).to(device))
+		return noise
 
 class ReadNet(nn.Module):
 	def __init__(self, hsize):
@@ -87,6 +66,7 @@ class ReadNet(nn.Module):
 			nn.Linear(128, hsize)
 		])
 		self.hsize = hsize
+		assert False
 
 	def forward(self, input):
 		input = input.view(self.hsize)
@@ -100,18 +80,16 @@ class ReadNet(nn.Module):
 class DiscrimNet(nn.Module):
 	def __init__(self, hsize):
 		super(DiscrimNet, self).__init__()
-		self.fcs = nn.ModuleList([
-			nn.Linear(hsize, 2048),
-			nn.Linear(2048, 2048),
-			nn.Linear(2048, 2048),
-			nn.Linear(2048, 1),
-		])
 
-	def forward(self, x):
-		x = F.relu(self.fcs[0](x))
-		x = F.relu(self.fcs[1](x))
-		x = F.relu(self.fcs[2](x))
-		x = self.fcs[3](x)
+		self.model = nn.Sequential(
+			nn.Linear(hsize, 128),
+			nn.LeakyReLU(0.2, inplace=True),
+			nn.Linear(128, 128),
+			nn.LeakyReLU(0.2, inplace=True),
+			nn.Linear(128, 1),
+			nn.Sigmoid()
+		)
 
-		# return nn.Sigmoid()(x)
+	def forward(self, R_G):
+		x = self.model(R_G)
 		return x
