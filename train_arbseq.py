@@ -24,15 +24,15 @@ import numpy as np
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 # HSIZE = 5
-ZSIZE = 50
+ZSIZE = 100
 # ITERS = 1
 LSTM_SIZE=1024
 BSIZE = 64
-LR = 2e-4
+LR = 2e-5
 all_letters = 'abcdefghijklmnopqrstuvwxyz'
 n_letters = len(all_letters)
 adversarial_loss = torch.nn.BCELoss().to(device)
-MAXLEN = 1
+MAXLEN = 4
 
 
 spawn = SpawnNet(hsize=n_letters, zsize=ZSIZE, lstm_size=LSTM_SIZE).to(device)
@@ -75,8 +75,9 @@ def toTensor(string):
 
 def drawSample(verbose=False):
 	# strlen = randint(5, MAXLEN)
+	# strlen = n_letters
 	strlen = MAXLEN
-	hat1 = 'cdef'
+	hat1 = 'lmnopqrstuv'
 
 	line = ''
 	for ii in range(strlen):
@@ -151,8 +152,8 @@ for iter in range(1, n_iters + 1):
 		state = spawn.init_state(device=device)
 
 		# sample level distribution
-		noise_sample = spawn.init_noise(device=device)
 		# noise_sample = spawn.init_zeros(device=device)
+		noise_sample = spawn.init_noise(device=device)
 
 		fake_hs = []
 		for lii in range(MAXLEN):
@@ -176,9 +177,9 @@ for iter in range(1, n_iters + 1):
 		input(':')
 
 	__fake_readouts = fake_readouts
-	fake_readouts =torch.cat(fake_readouts, 0).to(device)
+	fake_readouts = torch.cat(fake_readouts, 0).to(device)
 	# fake_readouts_detached = torch.cat(fake_readouts_detached, 0).to(device)
-	real_readouts =torch.cat(real_readouts, 0).to(device)
+	real_readouts = torch.cat(real_readouts, 0).to(device)
 
 	if iter % 5  == 0:
 		print('[%d] Sample: %s  vs  %s' % (

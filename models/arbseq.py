@@ -26,11 +26,11 @@ class SpawnNet(nn.Module):
 			return layers
 
 		self.model = nn.Sequential(
-			*block(zsize, 128, normalize=False),
-			*block(128, 128),
-			*block(128, 128),
-			*block(128, 128),
-			nn.Linear(128, hsize),
+			*block(zsize, 256, normalize=False),
+			*block(256, 512),
+			*block(512, 1024),
+			*block(1024, 1024),
+			nn.Linear(1024, hsize),
 			nn.Sigmoid()
 		)
 
@@ -60,10 +60,10 @@ class ReadNet(nn.Module):
 	def __init__(self, hsize):
 		super(ReadNet, self).__init__()
 		self.fcs = nn.ModuleList([
-			nn.Linear(hsize, 128),
-			nn.Linear(128, 128),
-			nn.Linear(128, 128),
-			nn.Linear(128, hsize)
+			nn.Linear(hsize, 256),
+			nn.Linear(256, 256),
+			nn.Linear(256, 256),
+			nn.Linear(256, hsize)
 		])
 		self.hsize = hsize
 		assert False
@@ -82,11 +82,11 @@ class DiscrimNet(nn.Module):
 		super(DiscrimNet, self).__init__()
 
 		self.model = nn.Sequential(
-			nn.Linear(hsize, 128),
+			nn.Linear(hsize, 256),
 			nn.LeakyReLU(0.2, inplace=True),
-			nn.Linear(128, 128),
+			nn.Linear(256, 256),
 			nn.LeakyReLU(0.2, inplace=True),
-			nn.Linear(128, 1),
+			nn.Linear(256, 1),
 			nn.Sigmoid()
 		)
 
