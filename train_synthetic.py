@@ -14,6 +14,7 @@ from model import *
 from structs import *
 
 HSIZE = 5
+ZSIZE = 50
 # ITERS = 40 * 1000
 ITERS = 1
 BSIZE = 64
@@ -21,7 +22,7 @@ LR = 5e-4
 TARGET_TREEDEF = TallFew
 adversarial_loss = torch.nn.BCELoss()
 
-model = Model(hsize=HSIZE)
+model = Model(hsize=HSIZE, zsize=ZSIZE)
 
 gen_opt = optim.Adam([
 	{ 'params': model.readout.parameters() },
@@ -78,7 +79,7 @@ for its in range(ITERS):
 			R_G = Tree.readout(root, model.readout)
 			def sample_noise(zsize):
 				return torch.rand(zsize)
-			Tree.spawn(root, R_G, model.spawn, sample_noise=sample_noise)
+			# Tree.spawn(root, R_G, model.spawn, sample_noise=sample_noise)
 
 		fake_readouts.append(R_G.unsqueeze(0))
 		discrim_labels.append(1) # fake
@@ -89,7 +90,7 @@ for its in range(ITERS):
 	gen_loss = adversarial_loss(model.discrim(fake_readouts), real_labels)
 	gen_loss.backward(retain_graph=True)
 	gen_opt.step()
-	print('Generate/L: %.3f' % gen_loss.item())
+	print('Generate/L: %.5f' % gen_loss.item())
 
 	# -- Discrimination Training --
 	# NOTE: Readout gradients carry over to discriminiator training
@@ -102,4 +103,4 @@ for its in range(ITERS):
 	discrim_loss.backward()
 	discrim_opt.step()
 
-	print('Discrim/L : %.3f' % discrim_loss.item())
+	print('Discrim/L : %.5f' % discrim_loss.item())

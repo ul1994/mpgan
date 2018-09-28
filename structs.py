@@ -155,7 +155,7 @@ class Tree:
         return
 
     @staticmethod
-    def spawn(root, readout, spawnfunc, noisefunc);
+    def spawn(root, readout, spawnfunc, noisefunc):
 
         def rec(node, readout, spawnfunc, noisefunc):
 
@@ -164,15 +164,17 @@ class Tree:
                 cspn = rec(node, readout, spawnfunc, noisefunc)
                 child_spawns.append(cspn)
 
+            # TODO: Sample once at init? Node is drawn once...
+            noise = noisefunc() # sampling once per node
             # TODO: spawnfunc itself is an RNN
             #  It generates as long a sequence it desires
-            result = spawnfunc(node.h_v, readout, noisefunc)
+            state = spawnfunc.init_hidden()
+            result = None
 
-            # # a result holds
-            # for
-
-            # all records of spawns are needed to be scored
-            return child_spawns + [result]
+            return {
+                'spawned': result,
+                'child_spawns': child_spawns,
+            }
 
         return rec(root, readout, spawnfunc, noisefunc)
 

@@ -1,5 +1,4 @@
 
-
 from __future__ import print_function
 import argparse
 import torch
@@ -9,10 +8,17 @@ import torch.optim as optim
 from torchvision import datasets, transforms
 
 class SpawnNet(nn.Module):
+	# Operations on every node.
+	# Function of node's h_v, graph's R_G, and sampling from noise Z.
+
+	# Spawns arbitrary # of children for a node:
+	#  Child spawns as feature vector h_c per RNN step
+	#  Sigmoid output brach explicitly states end of sqeuence
+
 	def __init__(self, hsize, zsize, hidden=128):
 		super(SpawnNet, self).__init__()
-		# each observation is h_v vertex, R_G readout, and some noise Z
 		self.fcs = [
+			# each observation is h_v vertex, R_G readout, noise Z
 			nn.Linear(hsize + hsize + zsize, 128),
 			nn.Linear(128, 512),
 			nn.Linear(512, 512),
@@ -135,13 +141,13 @@ def init_weights(m):
 		m.bias.data.fill_(0.01)
 
 class Model:
-	def __init__(self, hsize):
+	def __init__(self, hsize, zsize):
 		self.discrim = DiscrimNet(hsize=hsize)
 
 		self.readout = ReadoutNet(hsize=hsize)
 		self.msg = MsgNet(hsize=hsize)
 		self.update = UpdateNet(hsize=hsize)
-		self.spawn = SpawnNet(hsize=hsize)
+		self.spawn = SpawnNet(hsize=hsize, zsize=zsize)
 
 		# self.discrim.apply(init_weights)
 		# self.readout.apply(init_weights)
