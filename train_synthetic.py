@@ -16,7 +16,6 @@ from structs import *
 HSIZE = 5
 # ITERS = 40 * 1000
 ITERS = 1
-STEPS = 10
 BSIZE = 64
 LR = 5e-4
 TARGET_TREEDEF = TallFew
@@ -26,8 +25,9 @@ model = Model(hsize=HSIZE)
 
 gen_opt = optim.Adam([
 	{ 'params': model.readout.parameters() },
-	# TODO: message passer
-	# TODO: generator
+	{ 'params': model.msg.parameters() },
+	{ 'params': model.update.parameters() },
+	# TODO: add generator
 ], lr=LR, weight_decay=1e-4)
 
 discrim_opt = optim.Adam([
@@ -42,13 +42,17 @@ fake_labels = Variable(torch.zeros(bhalf, 1), requires_grad=False)
 
 for its in range(ITERS):
 
-	# TODO: Get a bunch of trees from "true distrib"
 
+	# TODO: addition rule
+	tsteps = 1
+
+	# -- Get a bunch of trees from "true distrib" --
 	fooling_labels = []
 	discrim_labels = []
 	real_readouts = []
 	for _ in range(bhalf):
 		root = TARGET_TREEDEF()
+		# root = Tree.prune(root, tsteps)
 		R_G = Tree.readout(root, model.readout)
 		real_readouts.append(R_G.unsqueeze(0))
 		discrim_labels.append(0) # real
@@ -62,15 +66,20 @@ for its in range(ITERS):
 		# TODO: Generate some tress, each within timestep:STEPS
 		root = Node(hsize=HSIZE)
 
-		for time in range(STEPS):
-			# TODO: message passing
-			# TODO: update w/ message
-			# TODO: noise
-			# TODO: generation
-			# R_G = Tree.readout(root, model.readout)
-			pass
+		# TODO: explore distinct (spawn, message, update) models for each tstep
+		for time in range(tsteps):
+			# 1. message passing
+			messages = Tree.send(root, model.msg)
+			# 2. update w/ message
+			Tree.update(root, model.update, messages)
+			# 3.generation
+			# TODO: only last spawn operation can be learned?
+			# TODO: can many spawns occur per node?
+			R_G = Tree.readout(root, model.readout)
+			def sample_noise(zsize):
+				return torch.rand(zsize)
+			Tree.spawn(root, R_G, model.spawn, sample_noise=sample_noise)
 
-		R_G = Tree.readout(root, model.readout)
 		fake_readouts.append(R_G.unsqueeze(0))
 		discrim_labels.append(1) # fake
 		fooling_labels.append(0) # fool real

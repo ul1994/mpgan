@@ -12,7 +12,7 @@ class Node:
 
     idcounter = 0
 
-    def __init__(self, height=0, hsize=5, spec=None, grads=True):
+    def __init__(self, height=0, hsize=5, spec=None, grads=False):
         self.parent = None
         self.id = '%d' % Node.idcounter
         Node.idcounter += 1
@@ -113,11 +113,68 @@ class Tree:
 
         def rec(node, rfunc):
             rsum = Variable(torch.zeros(node.hsize,))
-            for child in node.children[1:]:
+            for child in node.children:
                 rsum.add_(rec(child, rfunc))
 
             return rfunc(node.h_v, rsum)
         return rec(root, rfunc)
+
+    @staticmethod
+    def send(root, mfunc):
+        def rec(node, mfunc):
+            msg = Variable(torch.zeros(node.hsize,))
+            for child in node.children:
+                msg.add_(mfunc(node.h_v, child.h_v))
+            if node.parent is not None:
+                msg.add_(mfunc(node.h_v, node.parent.h_v))
+
+            child_msgs = []
+            for child in node.children:
+                child_msgs.append(rec(child, mfunc))
+
+            return {
+                'msg': msg,
+                'child_msgs': child_msgs,
+            }
+
+        return rec(root, mfunc)
+
+    @staticmethod
+    def update(root, upfunc, msgs):
+
+        def rec(node, upfunc, msgs):
+            node.h_v[:] = upfunc(node.h_v, msgs['msg'])
+
+            assert len(node.children) == len(msgs['child_msgs'])
+            for child_msgs, child in zip(msgs['child_msgs'], node.children):
+                rec(child, upfunc, child_msgs)
+
+            return
+
+        rec(root, upfunc, msgs)
+        return
+
+    @staticmethod
+    def spawn(root, readout, spawnfunc, noisefunc);
+
+        def rec(node, readout, spawnfunc, noisefunc):
+
+            child_spawns = []
+            for child in node.children:
+                cspn = rec(node, readout, spawnfunc, noisefunc)
+                child_spawns.append(cspn)
+
+            # TODO: spawnfunc itself is an RNN
+            #  It generates as long a sequence it desires
+            result = spawnfunc(node.h_v, readout, noisefunc)
+
+            # # a result holds
+            # for
+
+            # all records of spawns are needed to be scored
+            return child_spawns + [result]
+
+        return rec(root, readout, spawnfunc, noisefunc)
 
 from random import shuffle, randint, random
 
