@@ -32,10 +32,11 @@ LR = 2e-5
 all_letters = 'abcdefghijklmnopqrstuvwxyz'
 n_letters = len(all_letters)
 adversarial_loss = torch.nn.BCELoss().to(device)
-MAXLEN = 4
+MAXLEN = 1
 
 
 spawn = SpawnNet(hsize=n_letters, zsize=ZSIZE, lstm_size=LSTM_SIZE).to(device)
+readout = ReadNet(hsize=n_letters).to(device)
 discrim = DiscrimNet(hsize=n_letters).to(device)
 
 gen_opt = optim.Adam([
@@ -47,7 +48,7 @@ gen_opt = optim.Adam([
 #  The goal of readout is to extract as much distinguishing info
 #   from any samples shown
 discrim_opt = optim.Adam([
-	# { 'params': readout.parameters() },
+	{ 'params': readout.parameters() },
 	{ 'params': discrim.parameters() },
 ], lr=LR, weight_decay=1e-4)
 
@@ -116,28 +117,25 @@ real_labels = Variable(torch.ones(bhalf, 1), requires_grad=False).to(device)
 fake_labels = Variable(torch.zeros(bhalf, 1), requires_grad=False).to(device)
 
 def get_readout(sample, detach=False):
-	return sample[0].unsqueeze(0)
 	# sample: h_1, h_2, ..., h_T
-	# slen = len(sample)
+	slen = len(sample)
 
-	# rsum = Variable(torch.zeros(n_letters)).to(device)
-	# for ii in range(slen):
-	# 	one = sample[ii]
-	# 	# if detach: one = one.detach()
-	# 	# grad before readout (i.e.spawn) should not factor into
-	# 	#  training the discrim
+	ls = []
+	for embed in sample:
+		if detach: embed = embed.detach()
+		r_v = readout(embed)
+		ls.append(r_v.unsqueeze(0))
 
-	# 	r_t = readout(one)
-	# 	rsum.add_(r_t)
-
-	# return rsum.unsqueeze(0)
+	ls = torch.cat(ls, 0)
+	R_G = torch.sum(ls, 0)
+	return R_G.unsqueeze(0)
 
 disc_score = 1.0
 genmode = False
 for iter in range(1, n_iters + 1):
 
 	spawn.zero_grad()
-	# readout.zero_grad()
+	readout.zero_grad()
 
 	real_readouts = []
 	for _ in range(bhalf):
@@ -146,9 +144,8 @@ for iter in range(1, n_iters + 1):
 		real_readouts.append(R_G)
 
 	fake_readouts = []
-	fake_readouts_detached = []
+	fake_detached = []
 	for _ in range(bhalf):
-		# target_line_tensor.unsqueeze_(-1)
 		state = spawn.init_state(device=device)
 
 		# sample level distribution
@@ -159,26 +156,18 @@ for iter in range(1, n_iters + 1):
 		for lii in range(MAXLEN):
 			 # iteration level distribution
 			noise_iter = spawn.init_noise(device=device)
-			# every step, (noise, state) are used to generate an embedding
+
 			h_t, state = spawn(noise_sample, noise_iter, state)
-			# h_t, state = spawn(noise_iter, state)
 			fake_hs.append(h_t)
 
-		# fake_sample = torch.cat(fake_hs, 0)
 		R_G = get_readout(fake_hs)
 		fake_readouts.append(R_G)
-
-		# R_G_detached = get_readout(fake_hs, detach=True)
-		# fake_readouts_detached.append(R_G_detached)
-
-	if iter % 500 == 0:
-		print(fake_readouts[0])
-		print(real_readouts[0])
-		input(':')
+		detached = get_readout(fake_hs, detach=True)
+		fake_detached.append(detached)
 
 	__fake_readouts = fake_readouts
 	fake_readouts = torch.cat(fake_readouts, 0).to(device)
-	# fake_readouts_detached = torch.cat(fake_readouts_detached, 0).to(device)
+	fake_detached = torch.cat(fake_detached, 0).to(device)
 	real_readouts = torch.cat(real_readouts, 0).to(device)
 
 	if iter % 5  == 0:
@@ -208,7 +197,7 @@ for iter in range(1, n_iters + 1):
 
 	real_guesses = discrim(real_readouts)
 	real_loss = adversarial_loss(real_guesses, real_labels)
-	fake_guesses = discrim(fake_readouts.detach())
+	fake_guesses = discrim(fake_detached)
 	fake_loss = adversarial_loss(fake_guesses, fake_labels)
 
 	real_score = score(real_guesses, real_labels)

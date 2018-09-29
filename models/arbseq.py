@@ -59,23 +59,19 @@ class SpawnNet(nn.Module):
 class ReadNet(nn.Module):
 	def __init__(self, hsize):
 		super(ReadNet, self).__init__()
-		self.fcs = nn.ModuleList([
+
+		self.model = nn.Sequential(
 			nn.Linear(hsize, 256),
+			nn.LeakyReLU(0.2, inplace=True),
 			nn.Linear(256, 256),
-			nn.Linear(256, 256),
-			nn.Linear(256, hsize)
-		])
-		self.hsize = hsize
-		assert False
+			nn.LeakyReLU(0.2, inplace=True),
+			nn.Linear(256, hsize),
+			nn.Tanh()
+		)
 
-	def forward(self, input):
-		input = input.view(self.hsize)
-		x = F.relu(self.fcs[0](input))
-		x = F.relu(self.fcs[1](x))
-		x = F.relu(self.fcs[2](x))
-
-		x = self.fcs[-1](x)
-		return torch.tanh(x)
+	def forward(self, x):
+		x = self.model(x)
+		return x
 
 class DiscrimNet(nn.Module):
 	def __init__(self, hsize):
