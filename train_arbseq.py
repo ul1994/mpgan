@@ -24,15 +24,15 @@ import numpy as np
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 # HSIZE = 5
-ZSIZE = 100
+ZSIZE = 40
 # ITERS = 1
-LSTM_SIZE=1024
+LSTM_SIZE=512
 BSIZE = 64
-LR = 2e-5
+LR = 2e-4
 all_letters = 'abcdefghijklmnopqrstuvwxyz'
 n_letters = len(all_letters)
 adversarial_loss = torch.nn.BCELoss().to(device)
-MAXLEN = 5
+MAXLEN = 7
 
 
 spawn = SpawnNet(hsize=n_letters, zsize=ZSIZE, lstm_size=LSTM_SIZE).to(device)
@@ -75,16 +75,16 @@ def toTensor(string):
 	return sample
 
 def drawSample(verbose=False):
-	strlen = randint(5, MAXLEN)
+	strlen = randint(MAXLEN - 4, MAXLEN-1)
 	# strlen = n_letters
-	strlen = MAXLEN
-	hat1 = 'lmnopqrstuv'
+	# strlen = MAXLEN
+	hat1 = 'abcdefg'
 
 	line = ''
 	for ii in range(strlen):
-		# ind = 0 if random() > 0.8 else
 		line += hat1[randint(0, len(hat1)-1)]
-	# line += 'x'
+	for _ in range(MAXLEN - strlen):
+		line += 'x'
 
 	if verbose: print(line)
 
@@ -150,7 +150,6 @@ for iter in range(1, n_iters + 1):
 		state = spawn.init_state(device=device)
 
 		# sample level distribution
-		# noise_sample = spawn.init_zeros(device=device)
 		noise_sample = spawn.init_noise(device=device)
 
 		fake_hs = []
@@ -160,6 +159,9 @@ for iter in range(1, n_iters + 1):
 
 			h_t, state = spawn(noise_sample, noise_iter, state)
 			fake_hs.append(h_t)
+
+			# if lii > 0 and np.argmax(h_t.cpu().detach().numpy()) == n_letters-1:
+			# 	break
 
 		__fake_embeds.append(fake_hs)
 		R_G = get_readout(fake_hs)

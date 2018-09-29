@@ -15,21 +15,29 @@ class SpawnNet(nn.Module):
 
 	# Spawns arbitrary len seq:
 
-	def __init__(self, hsize, zsize=20, lstm_size=128):
+	def __init__(self, hsize, zsize=20, lstm_size=512):
 		super(SpawnNet, self).__init__()
 
-		def block(in_feat, out_feat, normalize=True):
-			layers = [nn.Linear(in_feat, out_feat)]
-			# if normalize:
-			# 	layers.append(nn.BatchNorm1d(out_feat, 0.8))
-			layers.append(nn.LeakyReLU(0.2, inplace=True))
-			return layers
+		# layers = [nn.Linear(in_feat, out_feat)]
+		# layers.append(nn.LeakyReLU(0.2, inplace=True))
 
-		self.model = nn.Sequential(
-			*block(zsize, 256, normalize=False),
-			*block(256, 512),
-			*block(512, 1024),
-			*block(1024, 1024),
+		self.rnnin = nn.Sequential(
+			nn.Linear(zsize, 256),
+			nn.Linear(256, 512),
+			nn.LeakyReLU(0.2, inplace=True),
+			nn.Linear(512, 1024),
+			nn.LeakyReLU(0.2, inplace=True),
+			nn.Linear(1024, 1024),
+		)
+
+		self.rnn = nn.LSTM(1024, lstm_size)
+
+		self.rnnout = nn.Sequential(
+			# nn.LeakyReLU(0.2, inplace=True),
+			nn.Linear(lstm_size + zsize, 512),
+			nn.LeakyReLU(0.2, inplace=True),
+			nn.Linear(512, 1024),
+			nn.LeakyReLU(0.2, inplace=True),
 			nn.Linear(1024, hsize),
 			nn.Sigmoid()
 		)
@@ -38,10 +46,17 @@ class SpawnNet(nn.Module):
 		self.noise_size = zsize
 
 	def forward(self, noise_sample, noise_iter, state):
-		# noise_sample = noise_sample.unsqueeze(0)
-		# print(noise_sample.size())
-		x = self.model(noise_sample)
-		# print(x.size())
+		# x = torch.cat([noise_sample, noise_iter])
+		x = noise_sample
+		x = self.rnnin(x)
+
+		x = x.view(1, 1, 1024)
+		x, state = self.rnn(x, state)
+
+		x = x.squeeze().squeeze()
+		x = torch.cat([x, noise_iter])
+		x = self.rnnout(x)
+
 		return x, state
 
 	def init_state(self, device='cpu'):
@@ -49,7 +64,7 @@ class SpawnNet(nn.Module):
 		return (
 			torch.zeros(1, 1, self.lstm_size).to(device),
 			torch.zeros(1, 1, self.lstm_size).to(device))
-		# return torch.zeros(1, 1, self.lstm_size).to(device)
+		# return torch.zeros(1, self.lstm_size).to(device)
 
 	def init_noise(self, size=None, device='cpu'):
 		if size is None: size = self.noise_size
@@ -61,11 +76,13 @@ class ReadNet(nn.Module):
 		super(ReadNet, self).__init__()
 
 		self.model = nn.Sequential(
-			nn.Linear(hsize, 256),
+			nn.Linear(hsize, 512),
 			nn.LeakyReLU(0.2, inplace=True),
-			nn.Linear(256, 256),
+			nn.Linear(512, 1024),
 			nn.LeakyReLU(0.2, inplace=True),
-			nn.Linear(256, hsize),
+			nn.Linear(1024, 1024),
+			nn.LeakyReLU(0.2, inplace=True),
+			nn.Linear(1024, hsize),
 			nn.Tanh()
 		)
 
