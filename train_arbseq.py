@@ -32,7 +32,7 @@ LR = 2e-5
 all_letters = 'abcdefghijklmnopqrstuvwxyz'
 n_letters = len(all_letters)
 adversarial_loss = torch.nn.BCELoss().to(device)
-MAXLEN = 1
+MAXLEN = 5
 
 
 spawn = SpawnNet(hsize=n_letters, zsize=ZSIZE, lstm_size=LSTM_SIZE).to(device)
@@ -75,7 +75,7 @@ def toTensor(string):
 	return sample
 
 def drawSample(verbose=False):
-	# strlen = randint(5, MAXLEN)
+	strlen = randint(5, MAXLEN)
 	# strlen = n_letters
 	strlen = MAXLEN
 	hat1 = 'lmnopqrstuv'
@@ -145,6 +145,7 @@ for iter in range(1, n_iters + 1):
 
 	fake_readouts = []
 	fake_detached = []
+	__fake_embeds = []
 	for _ in range(bhalf):
 		state = spawn.init_state(device=device)
 
@@ -160,12 +161,12 @@ for iter in range(1, n_iters + 1):
 			h_t, state = spawn(noise_sample, noise_iter, state)
 			fake_hs.append(h_t)
 
+		__fake_embeds.append(fake_hs)
 		R_G = get_readout(fake_hs)
 		fake_readouts.append(R_G)
 		detached = get_readout(fake_hs, detach=True)
 		fake_detached.append(detached)
 
-	__fake_readouts = fake_readouts
 	fake_readouts = torch.cat(fake_readouts, 0).to(device)
 	fake_detached = torch.cat(fake_detached, 0).to(device)
 	real_readouts = torch.cat(real_readouts, 0).to(device)
@@ -180,7 +181,7 @@ for iter in range(1, n_iters + 1):
 
 	if iter % 100 == 1:
 		samples = []
-		for example in __fake_readouts:
+		for example in __fake_embeds:
 			samples.append(toString(example))
 		print(', '.join(samples))
 		assert len(samples) > 0
