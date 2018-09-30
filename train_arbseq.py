@@ -28,7 +28,7 @@ ZSIZE = 40
 # ITERS = 1
 LSTM_SIZE=512
 BSIZE = 64
-LR = 2e-4
+LR = 2e-5
 all_letters = 'abcdefghijklmnopqrstuvwxyz'
 n_letters = len(all_letters)
 adversarial_loss = torch.nn.BCELoss().to(device)
@@ -120,14 +120,13 @@ def get_readout(sample, detach=False):
 	# sample: h_1, h_2, ..., h_T
 	slen = len(sample)
 
+
 	ls = []
+	R_G = torch.zeros(n_letters).to(device)
 	for embed in sample:
 		if detach: embed = embed.detach()
-		r_v = readout(embed)
-		ls.append(r_v.unsqueeze(0))
+		R_G = readout(R_G, embed)
 
-	ls = torch.cat(ls, 0)
-	R_G = torch.sum(ls, 0)
 	return R_G.unsqueeze(0)
 
 disc_score = 1.0

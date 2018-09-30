@@ -76,7 +76,7 @@ class ReadNet(nn.Module):
 		super(ReadNet, self).__init__()
 
 		self.model = nn.Sequential(
-			nn.Linear(hsize, 512),
+			nn.Linear(hsize + hsize, 512),
 			nn.LeakyReLU(0.2, inplace=True),
 			nn.Linear(512, 1024),
 			nn.LeakyReLU(0.2, inplace=True),
@@ -86,7 +86,8 @@ class ReadNet(nn.Module):
 			nn.Tanh()
 		)
 
-	def forward(self, x):
+	def forward(self, R_G, x):
+		x = torch.cat([R_G, x], 0)
 		x = self.model(x)
 		return x
 
