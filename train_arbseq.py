@@ -21,6 +21,7 @@ from random import randint
 from models.arbseq import SpawnNet, ReadNet, DiscrimNet
 from torch.autograd import Variable
 import numpy as np
+from numpy.random import shuffle
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -42,15 +43,19 @@ discrim = DiscrimNet(hsize=n_letters).to(device)
 gen_opt = optim.Adam([
 	{ 'params': spawn.parameters() },
 	# NOTE: dont tune readout here; it'll optimize to fool the discrim!
-], lr=LR, weight_decay=1e-4)
+], lr=2e-5, weight_decay=1e-4)
 
 # Readout aligns with discriminator
 #  The goal of readout is to extract as much distinguishing info
 #   from any samples shown
 discrim_opt = optim.Adam([
-	{ 'params': readout.parameters() },
 	{ 'params': discrim.parameters() },
-], lr=LR, weight_decay=1e-4)
+], lr=2e-5, weight_decay=1e-4)
+
+# bad readout can throw off training
+readout_opt = optim.Adam([
+	{ 'params': readout.parameters() },
+], lr=2e-6, weight_decay=1e-4)
 
 def score(guess, real):
 	guess = (guess.cpu() > 0.5).squeeze()\
@@ -79,11 +84,13 @@ def drawSample(verbose=False):
 	strlen = randint(MAXLEN - 5, MAXLEN-2)
 	hat1 = 'abcdefg'
 
-	line = ''
+	line = []
 	for ii in range(strlen):
-		line += hat1[randint(0, len(hat1)-1)]
+		line += [hat1[randint(0, len(hat1)-1)]]
 	for _ in range(MAXLEN - strlen):
-		line += 'x'
+		line += ['x']
+	shuffle(line)
+	line = ''.join(line)
 
 	if verbose: print(line)
 
@@ -180,8 +187,13 @@ for iter in range(1, n_iters + 1):
 	assert disc_score <= 1.0
 
 	discrim_loss = (real_loss + fake_loss) / 2
+
 	discrim_loss.backward()
 	discrim_opt.step()
+	if iter % 4 == 0:
+		# dont change the readout all the time
+		readout_opt.step()
+
 
 	# print('[%d] Discrim/L : %.5f  Score: %.2f' % (
 	# 	iter,
