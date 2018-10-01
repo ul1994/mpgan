@@ -34,7 +34,10 @@ class SpawnNet(nn.Module):
 			nn.Conv1d(128, 256, 3, stride=1, padding=1),
 			nn.BatchNorm1d(256, 0.8),
 			nn.LeakyReLU(0.2, inplace=True),
-			nn.Conv1d(256, hsize, 3, stride=1, padding=1),
+			nn.Conv1d(256, 512, 3, stride=1, padding=1),
+			nn.BatchNorm1d(512, 0.8),
+			nn.LeakyReLU(0.2, inplace=True),
+			nn.Conv1d(512, hsize, 3, stride=1, padding=1),
 			nn.Tanh()
 		)
 
@@ -65,8 +68,6 @@ class ReadNet(nn.Module):
 			nn.LeakyReLU(0.2, inplace=True),
 			nn.Linear(256, 512),
 			nn.LeakyReLU(0.2, inplace=True),
-			nn.Linear(512, 512),
-			nn.LeakyReLU(0.2, inplace=True),
 			nn.Linear(512, hsize),
 			nn.Tanh()
 		)
@@ -83,9 +84,11 @@ class DiscrimNet(nn.Module):
 		self.model = nn.Sequential(
 			nn.Linear(hsize, 256),
 			nn.LeakyReLU(0.2, inplace=True),
-			nn.Linear(256, 256),
+			nn.Linear(256, 512),
 			nn.LeakyReLU(0.2, inplace=True),
-			nn.Linear(256, 1),
+			nn.Linear(512, 1024),
+			nn.LeakyReLU(0.2, inplace=True),
+			nn.Linear(1024, 1),
 			nn.Sigmoid()
 		)
 

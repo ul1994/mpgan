@@ -14,7 +14,7 @@ from model import *
 from structs import *
 
 HSIZE = 5
-ZSIZE = 100
+ZSIZE = 50
 # ITERS = 40 * 1000
 ITERS = 1
 BSIZE = 64
