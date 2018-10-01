@@ -26,7 +26,7 @@ from numpy.random import shuffle
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 # HSIZE = 5
-ZSIZE = 50
+ZSIZE = 100
 # ITERS = 1
 LSTM_SIZE=512
 BSIZE = 64
@@ -37,13 +37,13 @@ adversarial_loss = torch.nn.BCELoss().to(device)
 MAXLEN = 8
 
 spawn = SpawnNet(hsize=n_letters, zsize=ZSIZE, resolution=MAXLEN).to(device)
-readout = ReadNet(hsize=n_letters, resolution=MAXLEN).to(device)
+# readout = ReadNet(hsize=n_letters, resolution=MAXLEN).to(device)
 discrim = DiscrimNet(hsize=n_letters).to(device)
 
 gen_opt = optim.Adam([
 	{ 'params': spawn.parameters() },
 	# NOTE: dont tune readout here; it'll optimize to fool the discrim!
-], lr=2e-5, weight_decay=1e-4)
+], lr=2e-4, weight_decay=1e-4)
 
 # Readout aligns with discriminator
 #  The goal of readout is to extract as much distinguishing info
@@ -53,9 +53,9 @@ discrim_opt = optim.Adam([
 ], lr=2e-5, weight_decay=1e-4)
 
 # bad readout can throw off training
-readout_opt = optim.Adam([
-	{ 'params': readout.parameters() },
-], lr=2e-6, weight_decay=1e-4)
+# readout_opt = optim.Adam([
+# 	{ 'params': readout.parameters() },
+# ], lr=2e-6, weight_decay=1e-4)
 
 def score(guess, real):
 	guess = (guess.cpu() > 0.5).squeeze()\
@@ -82,7 +82,8 @@ def toEmbedding(string):
 
 def drawSample(verbose=False):
 	strlen = randint(MAXLEN - 5, MAXLEN-2)
-	hat1 = 'abcdefg'
+	# hat1 = 'abcdefg'
+	hat1 = 'a'
 
 	line = []
 	for ii in range(strlen):
@@ -129,7 +130,7 @@ genmode = False
 for iter in range(1, n_iters + 1):
 
 	spawn.zero_grad()
-	readout.zero_grad()
+	# readout.zero_grad()
 
 	embeddings = []
 	for bii in range(bhalf):
@@ -141,14 +142,23 @@ for iter in range(1, n_iters + 1):
 			samples[wii, :, vii] = torch.tensor(vector)
 	samples = Variable(samples).to(device)
 
-	real_readouts = readout(samples)
+	real_readouts = samples
+	# real_readouts = readout(samples)
 
 	noise_sample = spawn.init_noise(device=device, batch=bhalf)
 	fake_hs = spawn(noise_sample)
 
 	__fake_embeds = fake_hs.detach().cpu().numpy()
-	fake_readouts = readout(fake_hs)
-	fake_detached = readout(fake_hs.detach())
+	# fake_readouts = readout(fake_hs)
+	# fake_detached = readout(fake_hs.detach())
+
+	fake_readouts = fake_hs
+	fake_detached = fake_hs.detach()
+
+
+	# print(fake_readouts.size())
+	# print(real_readouts.size())
+	# assert False
 
 	if iter % 5  == 0:
 		print('[%d] Sample: %s  vs  %s' % (
@@ -190,9 +200,9 @@ for iter in range(1, n_iters + 1):
 
 	discrim_loss.backward()
 	discrim_opt.step()
-	if iter % 4 == 0:
+	# if iter % 4 == 0:
 		# dont change the readout all the time
-		readout_opt.step()
+	# readout_opt.step()
 
 
 	# print('[%d] Discrim/L : %.5f  Score: %.2f' % (

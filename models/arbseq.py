@@ -1,4 +1,10 @@
 
+'''
+Model defined by Generator, Readout, and Discriminiator
+
+Matches distribution of sequence with agnostic ordering.
+'''
+
 from __future__ import print_function
 import argparse
 import torch
@@ -21,24 +27,22 @@ class SpawnNet(nn.Module):
 		self.f0 = 4
 		self.d0 = 128
 		self.inop = nn.Sequential(
-			nn.Linear(zsize, self.f0 * 128)
+			nn.Linear(zsize, self.f0 * 128),
 		)
 
 		self.model = nn.Sequential(
 			nn.BatchNorm1d(128),
 			nn.Upsample(scale_factor=2),
-			nn.Conv1d(128, 128, 3, stride=1, padding=1),
-			nn.BatchNorm1d(128, 0.8),
-			nn.LeakyReLU(0.2, inplace=True),
-			# nn.Upsample(scale_factor=2),
 			nn.Conv1d(128, 256, 3, stride=1, padding=1),
 			nn.BatchNorm1d(256, 0.8),
 			nn.LeakyReLU(0.2, inplace=True),
+			# nn.Upsample(scale_factor=2),
 			nn.Conv1d(256, 512, 3, stride=1, padding=1),
 			nn.BatchNorm1d(512, 0.8),
 			nn.LeakyReLU(0.2, inplace=True),
 			nn.Conv1d(512, hsize, 3, stride=1, padding=1),
-			nn.Tanh()
+			# nn.Tanh()
+			nn.Sigmoid()
 		)
 
 		self.noise_size = zsize
@@ -81,20 +85,37 @@ class DiscrimNet(nn.Module):
 	def __init__(self, hsize):
 		super(DiscrimNet, self).__init__()
 
+		def discriminator_block(in_filters, out_filters, stride=1, bn=True):
+			block = [   nn.Conv1d(in_filters, out_filters, 3, stride, 1),
+						nn.LeakyReLU(0.2, inplace=True),
+						nn.Dropout(0.25)]
+			if bn:
+				block.append(nn.BatchNorm1d(out_filters, 0.8))
+			return block
+
 		self.model = nn.Sequential(
-			nn.Linear(hsize, 256),
-			nn.LeakyReLU(0.2, inplace=True),
-			nn.Linear(256, 512),
-			nn.LeakyReLU(0.2, inplace=True),
-			nn.Linear(512, 1024),
-			nn.LeakyReLU(0.2, inplace=True),
-			nn.Linear(1024, 1),
+			*discriminator_block(26, 64, stride=1, bn=False),
+			*discriminator_block(64, 128, stride=2),
+			*discriminator_block(128, 256, stride=1),
+			*discriminator_block(256, 256, stride=2),
+		)
+
+		# The height and width of downsampled image
+		self.adv_layer = nn.Sequential(
+			nn.Linear(256*2, 1),
 			nn.Sigmoid()
 		)
 
-	def forward(self, R_G):
-		x = self.model(R_G)
-		return x
+	def forward(self, img):
+		# print(img.size())
+		out = self.model(img)
+		# print(out.size())
+		# assert False
+		out = out.view(out.shape[0], -1)
+		# print(out.size())
+		validity = self.adv_layer(out)
+
+		return validity
 
 if __name__ == '__main__':
 
