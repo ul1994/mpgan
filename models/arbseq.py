@@ -15,79 +15,64 @@ class SpawnNet(nn.Module):
 
 	# Spawns arbitrary len seq:
 
-	def __init__(self, hsize, zsize=20, lstm_size=512):
+	def __init__(self, hsize, resolution=8, zsize=20):
 		super(SpawnNet, self).__init__()
 
-		# layers = [nn.Linear(in_feat, out_feat)]
-		# layers.append(nn.LeakyReLU(0.2, inplace=True))
-
-		self.rnnin = nn.Sequential(
-			nn.Linear(zsize, 256),
-			nn.Linear(256, 512),
-			nn.LeakyReLU(0.2, inplace=True),
-			nn.Linear(512, 1024),
-			nn.LeakyReLU(0.2, inplace=True),
-			nn.Linear(1024, 1024),
+		self.f0 = 4
+		self.d0 = 128
+		self.inop = nn.Sequential(
+			nn.Linear(zsize, self.f0 * 128)
 		)
-
-		self.rnn = nn.LSTM(1024, lstm_size)
-
-		self.rnnout = nn.Sequential(
-			# nn.LeakyReLU(0.2, inplace=True),
-			nn.Linear(lstm_size + zsize, 512),
-			nn.LeakyReLU(0.2, inplace=True),
-			nn.Linear(512, 1024),
-			nn.LeakyReLU(0.2, inplace=True),
-			nn.Linear(1024, hsize),
-			nn.Sigmoid()
-		)
-
-		self.lstm_size = lstm_size
-		self.noise_size = zsize
-
-	def forward(self, noise_sample, noise_iter, state):
-		# x = torch.cat([noise_sample, noise_iter])
-		x = noise_sample
-		x = self.rnnin(x)
-
-		x = x.view(1, 1, 1024)
-		x, state = self.rnn(x, state)
-
-		x = x.squeeze().squeeze()
-		x = torch.cat([x, noise_iter])
-		x = self.rnnout(x)
-
-		return x, state
-
-	def init_state(self, device='cpu'):
-		# These are placeholders for LSTM cell state
-		return (
-			torch.zeros(1, 1, self.lstm_size).to(device),
-			torch.zeros(1, 1, self.lstm_size).to(device))
-		# return torch.zeros(1, self.lstm_size).to(device)
-
-	def init_noise(self, size=None, device='cpu'):
-		if size is None: size = self.noise_size
-		noise = Variable(torch.randn(size).to(device))
-		return noise
-
-class ReadNet(nn.Module):
-	def __init__(self, hsize):
-		super(ReadNet, self).__init__()
 
 		self.model = nn.Sequential(
-			nn.Linear(hsize + hsize, 512),
+			nn.BatchNorm1d(128),
+			nn.Upsample(scale_factor=2),
+			nn.Conv1d(128, 128, 3, stride=1, padding=1),
+			nn.BatchNorm1d(128, 0.8),
 			nn.LeakyReLU(0.2, inplace=True),
-			nn.Linear(512, 1024),
+			# nn.Upsample(scale_factor=2),
+			nn.Conv1d(128, 256, 3, stride=1, padding=1),
+			nn.BatchNorm1d(256, 0.8),
 			nn.LeakyReLU(0.2, inplace=True),
-			nn.Linear(1024, 1024),
-			nn.LeakyReLU(0.2, inplace=True),
-			nn.Linear(1024, hsize),
+			nn.Conv1d(256, hsize, 3, stride=1, padding=1),
 			nn.Tanh()
 		)
 
-	def forward(self, R_G, x):
-		x = torch.cat([R_G, x], 0)
+		self.noise_size = zsize
+
+	def forward(self, noise):
+		x = self.inop(noise)
+		x = x.view(-1, 128, self.f0)
+		x = self.model(x)
+
+		return x
+
+	def init_noise(self, size=None, batch=None, device='cpu'):
+		if size is None: size = self.noise_size
+		if batch is None:
+			noise = Variable(torch.randn(size).to(device))
+			return noise
+		else:
+			noise = Variable(torch.randn(batch, size).to(device))
+			return noise
+
+class ReadNet(nn.Module):
+	def __init__(self, hsize, resolution=8):
+		super(ReadNet, self).__init__()
+
+		self.model = nn.Sequential(
+			nn.Linear(hsize, 256),
+			nn.LeakyReLU(0.2, inplace=True),
+			nn.Linear(256, 512),
+			nn.LeakyReLU(0.2, inplace=True),
+			nn.Linear(512, 512),
+			nn.LeakyReLU(0.2, inplace=True),
+			nn.Linear(512, hsize),
+			nn.Tanh()
+		)
+
+	def forward(self, x):
+		x = torch.sum(x, -1)
 		x = self.model(x)
 		return x
 
@@ -107,3 +92,29 @@ class DiscrimNet(nn.Module):
 	def forward(self, R_G):
 		x = self.model(R_G)
 		return x
+
+if __name__ == '__main__':
+
+	HSIZE = 26
+	REZ = 8
+
+	model = SpawnNet(hsize=HSIZE, zsize=50, resolution=REZ)
+
+	noise = model.init_noise(batch=5)
+
+	print('Noise in:', noise[0][:5], '...')
+
+	out = model(noise)
+
+	print('Out size:', out.size())
+	print('Batch   :', out.size(0))
+	print('Hsize   :', out.size(1)) # x 128 x 256 x 26
+	print('N samps :', out.size(2)) # 4 > 8 > 16
+
+	reader = ReadNet(hsize=HSIZE, resolution=REZ)
+	readout = reader(out)
+
+
+	print('Readout :', readout.size())
+	print('Batch   :', readout.size(0))
+	print('Hsize   :', readout.size(1))

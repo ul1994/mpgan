@@ -3,6 +3,7 @@
 #  can be learned using SpawnNet
 
 from __future__ import unicode_literals, print_function, division
+import os, sys
 from io import open
 import glob
 import os
@@ -24,7 +25,7 @@ import numpy as np
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 # HSIZE = 5
-ZSIZE = 40
+ZSIZE = 50
 # ITERS = 1
 LSTM_SIZE=512
 BSIZE = 64
@@ -32,11 +33,10 @@ LR = 2e-5
 all_letters = 'abcdefghijklmnopqrstuvwxyz'
 n_letters = len(all_letters)
 adversarial_loss = torch.nn.BCELoss().to(device)
-MAXLEN = 7
+MAXLEN = 8
 
-
-spawn = SpawnNet(hsize=n_letters, zsize=ZSIZE, lstm_size=LSTM_SIZE).to(device)
-readout = ReadNet(hsize=n_letters).to(device)
+spawn = SpawnNet(hsize=n_letters, zsize=ZSIZE, resolution=MAXLEN).to(device)
+readout = ReadNet(hsize=n_letters, resolution=MAXLEN).to(device)
 discrim = DiscrimNet(hsize=n_letters).to(device)
 
 gen_opt = optim.Adam([
@@ -60,24 +60,23 @@ def score(guess, real):
 	assert correct <= 1.0
 	return correct
 
-def toTensor(string):
+def toEmbedding(string):
 	# (seqlen x batch x embedlen)
 	sample = [] # series of embeddings per t
 
 	# for sii in range(len(strings)):
 	for li in range(len(string)):
-		tensor = torch.zeros(n_letters)
+		# tensor = torch.zeros(n_letters)
+		tensor = [0 for _ in range(n_letters)]
 		letter = string[li]
 		tensor[all_letters.find(letter)] = 1
-		tensor = Variable(tensor).to(device)
+		# tensor = Variable(tensor).to(device)
 
 		sample.append(tensor)
 	return sample
 
 def drawSample(verbose=False):
-	strlen = randint(MAXLEN - 4, MAXLEN-1)
-	# strlen = n_letters
-	# strlen = MAXLEN
+	strlen = randint(MAXLEN - 5, MAXLEN-2)
 	hat1 = 'abcdefg'
 
 	line = ''
@@ -88,16 +87,18 @@ def drawSample(verbose=False):
 
 	if verbose: print(line)
 
-	tensor = toTensor(line)
+	tensor = toEmbedding(line)
 	return tensor, line
 
 def toString(embedding):
+	embedding = np.swapaxes(embedding, 1, 0)
 	strlen = len(embedding) # num chars
+	assert strlen == MAXLEN
 
 	line = ''
 	for ii in range(strlen):
 		vect = embedding[ii]
-		vect = vect.detach().cpu().numpy()
+		# vect = vect.detach().cpu().numpy()
 		ind = np.argmax(vect)
 		line += all_letters[ind]
 	return line
@@ -116,19 +117,6 @@ bhalf = BSIZE // 2
 real_labels = Variable(torch.ones(bhalf, 1), requires_grad=False).to(device)
 fake_labels = Variable(torch.zeros(bhalf, 1), requires_grad=False).to(device)
 
-def get_readout(sample, detach=False):
-	# sample: h_1, h_2, ..., h_T
-	slen = len(sample)
-
-
-	ls = []
-	R_G = torch.zeros(n_letters).to(device)
-	for embed in sample:
-		if detach: embed = embed.detach()
-		R_G = readout(R_G, embed)
-
-	return R_G.unsqueeze(0)
-
 disc_score = 1.0
 genmode = False
 for iter in range(1, n_iters + 1):
@@ -136,46 +124,29 @@ for iter in range(1, n_iters + 1):
 	spawn.zero_grad()
 	readout.zero_grad()
 
-	real_readouts = []
-	for _ in range(bhalf):
+	embeddings = []
+	for bii in range(bhalf):
 		sample, as_string = drawSample(verbose=False)
-		R_G = get_readout(sample)
-		real_readouts.append(R_G)
+		embeddings.append(sample)
+	samples = torch.zeros(bhalf, n_letters, MAXLEN)
+	for wii, word in enumerate(embeddings):
+		for vii, vector in enumerate(word):
+			samples[wii, :, vii] = torch.tensor(vector)
+	samples = Variable(samples).to(device)
 
-	fake_readouts = []
-	fake_detached = []
-	__fake_embeds = []
-	for _ in range(bhalf):
-		state = spawn.init_state(device=device)
+	real_readouts = readout(samples)
 
-		# sample level distribution
-		noise_sample = spawn.init_noise(device=device)
+	noise_sample = spawn.init_noise(device=device, batch=bhalf)
+	fake_hs = spawn(noise_sample)
 
-		fake_hs = []
-		for lii in range(MAXLEN):
-			 # iteration level distribution
-			noise_iter = spawn.init_noise(device=device)
-
-			h_t, state = spawn(noise_sample, noise_iter, state)
-			fake_hs.append(h_t)
-
-			# if lii > 0 and np.argmax(h_t.cpu().detach().numpy()) == n_letters-1:
-			# 	break
-
-		__fake_embeds.append(fake_hs)
-		R_G = get_readout(fake_hs)
-		fake_readouts.append(R_G)
-		detached = get_readout(fake_hs, detach=True)
-		fake_detached.append(detached)
-
-	fake_readouts = torch.cat(fake_readouts, 0).to(device)
-	fake_detached = torch.cat(fake_detached, 0).to(device)
-	real_readouts = torch.cat(real_readouts, 0).to(device)
+	__fake_embeds = fake_hs.detach().cpu().numpy()
+	fake_readouts = readout(fake_hs)
+	fake_detached = readout(fake_hs.detach())
 
 	if iter % 5  == 0:
 		print('[%d] Sample: %s  vs  %s' % (
 			iter,
-			toString(fake_hs),
+			toString(__fake_embeds[0]),
 			as_string))
 
 	# -- Generator Training --
@@ -183,6 +154,7 @@ for iter in range(1, n_iters + 1):
 	if iter % 100 == 1:
 		samples = []
 		for example in __fake_embeds:
+			# print(type(example))
 			samples.append(toString(example))
 		print(', '.join(samples))
 		assert len(samples) > 0
@@ -216,8 +188,9 @@ for iter in range(1, n_iters + 1):
 	# 	discrim_loss.item(),
 	# 	disc_score))
 
-	print('[%d] Generate/L: %.5f  Discrim/L : %.5f  Score: %.2f ' % (
+	sys.stdout.write('[%d] Generate/L: %.5f  Discrim/L : %.5f  Score: %.2f      \r' % (
 		iter,
 		gen_loss.item(),
 		discrim_loss.item(),
-		disc_score), end='\r')
+		disc_score))
+	sys.stdout.flush()
