@@ -27,15 +27,15 @@ from numpy.random import shuffle
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 # HSIZE = 5
-ZSIZE = 100
+ZSIZE = 10
 # ITERS = 1
 LSTM_SIZE=512
 BSIZE = 64
 LR = 2e-5
 # all_letters = 'abcdefghijklmnopqrstuvwxyz'
-all_letters = 'abcdefghijklmnopqrstuvwxyz'
+all_letters = 'abcdefghijklmnopqrstuvwxyz012345'
 n_letters = len(all_letters)
-# assert n_letters == 32
+assert n_letters == 32
 adversarial_loss = torch.nn.BCELoss().to(device)
 RESOLUTION = 16
 MAXLEN = 8
@@ -177,7 +177,7 @@ for iter in range(1, n_iters + 1):
 	if iter % 5  == 0:
 		print('[%d] Sample: %s  vs  %s' % (
 			iter,
-			toString(__fake_embeds[0]),
+			toString(__fake_embeds[0], upto=32),
 			as_string))
 
 	# -- Generator Training --
