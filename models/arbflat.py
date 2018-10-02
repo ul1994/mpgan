@@ -30,37 +30,25 @@ class SpawnNet(nn.Module):
 		# noise reshaped: 4 8 16 32, 4 8 16
 
 		# N by M suitable where N << M
-		self.fdim = (1, 4)
-		self.fflat = 1
-		for dval in self.fdim: self.fflat *= dval
+		self.fflat = resolution
 
 		self.inop = nn.Sequential(
 			nn.Linear(zsize, self.fflat * 128),
+			nn.LeakyReLU(0.2, inplace=True),
+			nn.Linear(self.fflat * 128, self.fflat * 128),
+			nn.LeakyReLU(0.2, inplace=True),
+			nn.Linear(self.fflat * 128, self.fflat * 128),
+			nn.LeakyReLU(0.2, inplace=True),
 		)
 
 		self.model = nn.Sequential(
 			nn.BatchNorm1d(128),
 
-			nn.Conv1d(128, 128, 5, stride=1, padding=2),
-			nn.BatchNorm1d(128, 0.8),
+			nn.Conv1d(128, 512, 1, stride=1, padding=0),
 			nn.LeakyReLU(0.2, inplace=True),
-
-			nn.Upsample(scale_factor=2), # (1, 8)
-			nn.Conv1d(128, 256, 9, stride=1, padding=4),
-			nn.BatchNorm1d(256, 0.8),
-			nn.LeakyReLU(0.2, inplace=True),
-
-			nn.Upsample(scale_factor=2), # (1, 16)
-			nn.Conv1d(256, 512, 17, stride=1, padding=8),
 			nn.BatchNorm1d(512, 0.8),
-			nn.LeakyReLU(0.2, inplace=True),
 
-			# nn.Upsample(scale_factor=(2, 1)),
-			nn.Conv1d(512, 512, 17, stride=1, padding=8),
-			nn.BatchNorm1d(512, 0.8),
-			nn.LeakyReLU(0.2, inplace=True),
-
-			nn.Conv1d(512, hsize, 1, stride=1),
+			nn.Conv1d(512, hsize, 1, stride=1, padding=0),
 			nn.Sigmoid()
 		)
 
@@ -68,7 +56,7 @@ class SpawnNet(nn.Module):
 
 	def forward(self, noise):
 		x = self.inop(noise)
-		x = x.view(-1, 128, self.fdim[1])
+		x = x.view(-1, 128, self.fflat)
 		x = self.model(x)
 		# x = x.view(x.shape[0], x.shape[2], x.shape[3])
 		return x
@@ -138,7 +126,7 @@ class DiscrimNet(nn.Module):
 if __name__ == '__main__':
 
 	HSIZE = 26
-	REZ = 8
+	REZ = 16
 
 	model = SpawnNet(hsize=HSIZE, zsize=50, resolution=REZ)
 	discrim = DiscrimNet(hsize=HSIZE, resolution=REZ)

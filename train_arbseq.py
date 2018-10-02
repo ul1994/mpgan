@@ -18,7 +18,8 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torchvision import datasets, transforms
 from random import randint
-from models.arbseq import SpawnNet, ReadNet, DiscrimNet
+# from models.arbseq import SpawnNet, ReadNet, DiscrimNet
+from models.arbflat import SpawnNet, ReadNet, DiscrimNet
 from torch.autograd import Variable
 import numpy as np
 from numpy.random import shuffle
@@ -36,9 +37,10 @@ all_letters = 'abcdefghijklmnopqrstuvwxyz'
 n_letters = len(all_letters)
 # assert n_letters == 32
 adversarial_loss = torch.nn.BCELoss().to(device)
+RESOLUTION = 16
 MAXLEN = 8
 
-spawn = SpawnNet(hsize=n_letters, zsize=ZSIZE, resolution=MAXLEN).to(device)
+spawn = SpawnNet(hsize=n_letters, zsize=ZSIZE, resolution=RESOLUTION).to(device)
 # readout = ReadNet(hsize=n_letters, resolution=MAXLEN).to(device)
 discrim = DiscrimNet(hsize=n_letters).to(device)
 
@@ -83,16 +85,20 @@ def toEmbedding(string):
 	return sample
 
 def drawSample(verbose=False):
-	strlen = randint(MAXLEN - 5, MAXLEN-2)
-	# hat1 = 'abcdefg'
 	hat1 = 'a'
 
+	strlen = randint(MAXLEN - 3, MAXLEN-1)
+
 	line = []
-	for ii in range(strlen):
-		line += [hat1[randint(0, len(hat1)-1)]]
-	for _ in range(MAXLEN - strlen):
-		line += ['x']
+	for ii in range(MAXLEN):
+		if ii < strlen:
+			line += [ hat1[randint(0, len(hat1)-1)] ]
+		else:
+			line += ['x']
 	shuffle(line)
+	for ii in range(MAXLEN, RESOLUTION):
+		line += ['x']
+	assert len(line) == RESOLUTION
 	line = ''.join(line)
 
 	if verbose: print(line)
@@ -100,10 +106,16 @@ def drawSample(verbose=False):
 	tensor = toEmbedding(line)
 	return tensor, line
 
-def toString(embedding, upto=8):
+def toString(embedding, upto=MAXLEN):
 	embedding = np.swapaxes(embedding, 1, 0)
 	strlen = len(embedding) # num chars
-	assert strlen == MAXLEN
+	try:
+		assert embedding.shape[0] == RESOLUTION
+		assert embedding.shape[1] == n_letters
+	except:
+		print(embedding.shape[0])
+		print(embedding.shape[1])
+		assert False
 
 	line = ''
 	for ii in range(strlen):
@@ -138,7 +150,7 @@ for iter in range(1, n_iters + 1):
 	for bii in range(bhalf):
 		sample, as_string = drawSample(verbose=False)
 		embeddings.append(sample)
-	samples = torch.zeros(bhalf, n_letters, MAXLEN)
+	samples = torch.zeros(bhalf, n_letters, RESOLUTION)
 	for wii, word in enumerate(embeddings):
 		for vii, vector in enumerate(word):
 			samples[wii, :, vii] = torch.tensor(vector)
@@ -205,12 +217,6 @@ for iter in range(1, n_iters + 1):
 	# if iter % 4 == 0:
 		# dont change the readout all the time
 	# readout_opt.step()
-
-
-	# print('[%d] Discrim/L : %.5f  Score: %.2f' % (
-	# 	iter,
-	# 	discrim_loss.item(),
-	# 	disc_score))
 
 	sys.stdout.write('[%d] Generate/L: %.5f  Discrim/L : %.5f  Score: %.2f      \r' % (
 		iter,
