@@ -31,8 +31,10 @@ ZSIZE = 100
 LSTM_SIZE=512
 BSIZE = 64
 LR = 2e-5
+# all_letters = 'abcdefghijklmnopqrstuvwxyz'
 all_letters = 'abcdefghijklmnopqrstuvwxyz'
 n_letters = len(all_letters)
+# assert n_letters == 32
 adversarial_loss = torch.nn.BCELoss().to(device)
 MAXLEN = 8
 
@@ -98,7 +100,7 @@ def drawSample(verbose=False):
 	tensor = toEmbedding(line)
 	return tensor, line
 
-def toString(embedding):
+def toString(embedding, upto=8):
 	embedding = np.swapaxes(embedding, 1, 0)
 	strlen = len(embedding) # num chars
 	assert strlen == MAXLEN
@@ -109,7 +111,7 @@ def toString(embedding):
 		# vect = vect.detach().cpu().numpy()
 		ind = np.argmax(vect)
 		line += all_letters[ind]
-	return line
+	return line[:upto]
 # input is string in embedded form per char
 # target is input shifted by one (string[1:]) + EOS termination char
 # LSTM will be trained to guess the next char
