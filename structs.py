@@ -251,18 +251,18 @@ class TallFew(Node):
             self.add(TallFew(height=self.height+1, endh=endh))
 
 from numpy.random import normal
-class Boxes(Node):
+class Hanoi(Node):
     def __init__(self, height=0, imsize=64, endh=None, parent=None):
         super().__init__(height=height, grads=False, parent=parent)
 
         if endh is None:
-            endh = randint(4, 6) # random height
+            endh = randint(2, 4) # random height
             # endh /s= 2
             height = 0 # this is the root
 
         width = imsize / (2 ** height)
         maxw = imsize if self.parent is None else self.parent.h_v[2]
-        width = int(min(np.abs(normal(width, 10)), maxw))
+        width = int(min(np.abs(normal(width, 5)), maxw))
         center = imsize // 2
 
         self.h_v = np.array([center, center, width, width])
@@ -273,9 +273,10 @@ class Boxes(Node):
         # prob = random()
         nchild = 1
         for ii in range(nchild):
-            self.add(Boxes(height=self.height+1, imsize=imsize, endh=endh, parent=self))
+            self.add(Hanoi(height=self.height+1, imsize=imsize, endh=endh, parent=self))
 
 if __name__ == '__main__':
+    import matplotlib.pyplot as plt
 
     # root = TallFew()
     # Tree.show(root)
@@ -283,14 +284,14 @@ if __name__ == '__main__':
     # Tree.save('sample', root)
     # root = Tree.load('sample')
 
-    root = Boxes()
-    # Tree.show(root)
-    canvas = Tree.rasterize(root)
-    import matplotlib.pyplot as plt
-    plt.figure()
-    plt.imshow(canvas, vmin=0, vmax=1, cmap='gray')
-    plt.show()
-    plt.close()
+    for ii in range(5):
+        root = Hanoi()
+        # Tree.show(root)
+        canvas = Tree.rasterize(root)
+        plt.figure()
+        plt.imshow(canvas, vmin=0, vmax=1, cmap='gray')
+        plt.show()
+        plt.close()
 
     # for ii in range(3):
     #     root = ShortMany()
