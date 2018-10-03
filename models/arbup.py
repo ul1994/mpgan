@@ -40,31 +40,35 @@ class SpawnNet(nn.Module):
 			if upsamp: ops += [nn.Upsample(scale_factor=2)]
 			return ops
 
+		def conv1d(fin, fout, kernel=(1, 3), padding=(1, 1), upsamp=None, norm=True):
+			ops = [
+				nn.Conv2d(fin, fout, kernel, 1, padding),
+				nn.LeakyReLU(0.2, inplace=True),
+			]
+			if norm: ops += [nn.BatchNorm2d(fout, 0.8),]
+			if upsamp is not None: ops = [nn.Upsample(scale_factor=upsamp)] + ops
+			return ops
+
 
 		self.inop = nn.Sequential(
-			*fclayer(zsize, self.fflat * 128, upsamp=True),
-			*fclayer(self.fflat * 128 * 2, self.fflat * 128 * 2, upsamp=True),
+			*fclayer(zsize, self.fflat**2 * 256),
+			# *fclayer(self.fflat * 128 * 2, self.fflat * 128 * 2, upsamp=True),
 
-			# expansion from 1D to 2D
-			nn.Linear(self.fflat * 128 * 4, self.fflat * 128 * 4 * 4),
+			# # expansion from 1D to 2D
+			# nn.Linear(self.fflat * 128 * 4, self.fflat * 128 * 4 * 4),
 			# target is (bsize, nChannels, hsize, resolution)
 		)
 
-		self.model = nn.Sequential(
-			nn.BatchNorm2d(128),
+		self.convs = nn.Sequential(
+			# resolution expansion
+			*conv1d(256, 256, (1, 3), (0, 1), upsamp=(1, 2)),
+			*conv1d(256, 256, (1, 3), (0, 1), upsamp=(1, 2)),
 
-			nn.Upsample(scale_factor=(2, 1)),
-			nn.Conv2d(128, 128, (1, 3), stride=1, padding=(0, 1)),
-			nn.LeakyReLU(0.2, inplace=True),
-			nn.BatchNorm2d(128, 0.8),
-
-			nn.Upsample(scale_factor=(2, 1)),
-			nn.Conv2d(128, 64, (1, 3), stride=1, padding=(0, 1)),
-			nn.LeakyReLU(0.2, inplace=True),
-			nn.BatchNorm2d(64, 0.8),
-
-			nn.Upsample(scale_factor=(2, 1)),
-			nn.Conv2d(64, 1, (1, 3), stride=1, padding=(0, 1)),
+			# hidden dim expansion
+			*conv1d(256, 256, (3, 1), (1, 0), upsamp=(2, 1)),
+			*conv1d(256, 128, (3, 1), (1, 0), upsamp=(2, 1)),
+			*conv1d(128, 128, (3, 1), (1, 0), upsamp=(2, 1)),
+			*conv1d(128, 1, (1, 1), (0, 0), norm=False),
 
 			nn.Sigmoid()
 		)
@@ -72,11 +76,12 @@ class SpawnNet(nn.Module):
 		self.noise_size = zsize
 
 	def forward(self, noise):
-		noise = noise.unsqueeze(1)
+		# noise = noise.unsqueeze(1)
 		x = noise
 		x = self.inop(x)
-		x = x.view(-1, 128, 4, self.fflat * 4)
-		x = self.model(x)
+		x = x.view(-1, 256, self.fflat, self.fflat)
+
+		x = self.convs(x)
 
 		x = x.view(-1, 32, 16)
 		return x
@@ -112,30 +117,29 @@ class DiscrimNet(nn.Module):
 	def __init__(self, hsize, resolution=16):
 		super(DiscrimNet, self).__init__()
 
-		def discriminator_block(in_filters, out_filters, stride=1, bn=True):
-			block = [   nn.Conv1d(in_filters, out_filters, 3, stride, 1),
-						nn.LeakyReLU(0.2, inplace=True),
-						nn.Dropout(0.25)]
-			if bn:
-				block.append(nn.BatchNorm1d(out_filters, 0.8))
+		def discriminator_block(din, dout):
+			block = [
+				nn.Linear(din, dout),
+				nn.LeakyReLU(0.2, inplace=True),
+				nn.Dropout(0.25)
+			]
 			return block
 
 		self.model = nn.Sequential(
-			*discriminator_block(hsize, 64, stride=1, bn=False),
-			*discriminator_block(64, 128, stride=2),
-			*discriminator_block(128, 256, stride=1),
-			*discriminator_block(256, 512, stride=2),
+			*discriminator_block(hsize * resolution, 512),
+			*discriminator_block(512, 512),
 		)
 
 		# The height and width of downsampled image
 		self.adv_layer = nn.Sequential(
-			nn.Linear(4 * 512, 2048),
+			nn.Linear(512, 2048),
 			nn.LeakyReLU(0.2, inplace=True),
 			nn.Linear(2048, 1),
 			nn.Sigmoid()
 		)
 
 	def forward(self, x):
+		x = x.view(x.shape[0], -1)
 		x = self.model(x)
 
 		x = x.view(x.shape[0], -1)
@@ -145,7 +149,7 @@ class DiscrimNet(nn.Module):
 
 if __name__ == '__main__':
 
-	HSIZE = 26
+	HSIZE = 32
 	REZ = 16
 
 	model = SpawnNet(hsize=HSIZE, zsize=50, resolution=REZ)
@@ -157,8 +161,8 @@ if __name__ == '__main__':
 	out = model(noise)
 	print('Spawn out:', out.size())
 
-	# valid = discrim(out)
-	# print('Disc out:', valid.size())
+	valid = discrim(out)
+	print('Disc out:', valid.size())
 
 
 
