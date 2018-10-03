@@ -32,20 +32,22 @@ class SpawnNet(nn.Module):
 		# N by M suitable where N << M
 		self.fflat = 4
 
+		def fclayer(din, dout, upsamp=False):
+			ops = [
+				nn.Linear(din, dout),
+				nn.LeakyReLU(0.2, inplace=True),
+			]
+			if upsamp: ops += [nn.Upsample(scale_factor=2)]
+			return ops
+
+
 		self.inop = nn.Sequential(
-			nn.Linear(zsize, self.fflat * 128),
-			nn.LeakyReLU(0.2, inplace=True),
-			nn.Upsample(scale_factor=2),
+			*fclayer(zsize, self.fflat * 128, upsamp=True),
+			*fclayer(self.fflat * 128 * 2, self.fflat * 128 * 2, upsamp=True),
 
-			nn.Linear(self.fflat * 128 * 2, self.fflat * 128 * 2),
-			nn.LeakyReLU(0.2, inplace=True),
-			nn.Upsample(scale_factor=2),
-
-			nn.Linear(self.fflat * 128 * 4, self.fflat * 128 * 4),
-			nn.LeakyReLU(0.2, inplace=True),
-
-			# prepare to 2D
+			# expansion from 1D to 2D
 			nn.Linear(self.fflat * 128 * 4, self.fflat * 128 * 4 * 4),
+			# target is (bsize, nChannels, hsize, resolution)
 		)
 
 		self.model = nn.Sequential(
@@ -71,7 +73,8 @@ class SpawnNet(nn.Module):
 
 	def forward(self, noise):
 		noise = noise.unsqueeze(1)
-		x = self.inop(noise)
+		x = noise
+		x = self.inop(x)
 		x = x.view(-1, 128, 4, self.fflat * 4)
 		x = self.model(x)
 
