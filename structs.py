@@ -12,14 +12,13 @@ class Node:
 
     idcounter = 0
 
-    def __init__(self, height=0, hsize=5, spec=None, grads=False):
-        self.parent = None
+    def __init__(self, height=0, hsize=4, spec=None, grads=False, parent=None):
+        self.parent = parent
         self.id = '%d' % Node.idcounter
         Node.idcounter += 1
         self.children = []
         self.hsize = hsize
 
-        self.parent = None
         self.height = height
 
         self.h_v = Variable(torch.rand(hsize,), requires_grad=grads)
@@ -120,6 +119,30 @@ class Tree:
         return rec(root, rfunc)
 
     @staticmethod
+    def readout_fill(root, rfunc, fill=16):
+        # readout but "zero padded" up to 'fill' units
+
+        def rec(node, rfunc, fill):
+            child_reads = []
+            for child in node.children:
+                child_reads.append(rec(child, rfunc, fill))
+            while len(child_reads) < fill:
+                child_reads.append(torch.zeros(node.hsize))
+
+            # print('Collected')
+            # for vect in child_reads:
+            #     print(vect.size())
+
+            child_reads = Variable(
+                torch.transpose(
+                    torch.stack(child_reads),
+                    0,
+                    1))
+
+            return rfunc(node.h_v, child_reads)
+        return rec(root, rfunc, fill)
+
+    @staticmethod
     def send(root, mfunc):
         def rec(node, mfunc):
             msg = Variable(torch.zeros(node.hsize,))
@@ -178,6 +201,22 @@ class Tree:
 
         return rec(root, readout, spawnfunc, noisefunc)
 
+    @staticmethod
+    def rasterize(root, imsize=64):
+        canvas = np.zeros((imsize, imsize))
+
+        def rec(node, height):
+            cx, cy, ww, hh = node.h_v
+            topX, topY = cx - ww // 2, cy - hh // 2
+            canvas[topY:topY+hh, topX:topX+ww] = 1 * (1 - height * 0.1)
+
+            for child in node.children:
+                rec(child, height + 1)
+
+        rec(root, 0)
+
+        return canvas
+
 from random import shuffle, randint, random
 
 class ShortMany(Node):
@@ -211,16 +250,47 @@ class TallFew(Node):
         for ii in range(nchild):
             self.add(TallFew(height=self.height+1, endh=endh))
 
+from numpy.random import normal
+class Boxes(Node):
+    def __init__(self, height=0, imsize=64, endh=None, parent=None):
+        super().__init__(height=height, grads=False, parent=parent)
+
+        if endh is None:
+            endh = randint(4, 6) # random height
+            # endh /s= 2
+            height = 0 # this is the root
+
+        width = imsize / (2 ** height)
+        maxw = imsize if self.parent is None else self.parent.h_v[2]
+        width = int(min(np.abs(normal(width, 10)), maxw))
+        center = imsize // 2
+
+        self.h_v = np.array([center, center, width, width])
+
+        if height == endh:
+            return
+
+        # prob = random()
+        nchild = 1
+        for ii in range(nchild):
+            self.add(Boxes(height=self.height+1, imsize=imsize, endh=endh, parent=self))
+
 if __name__ == '__main__':
 
-    root = TallFew()
-    # root.add()
-    # root.add()
-    Tree.show(root)
+    # root = TallFew()
+    # Tree.show(root)
 
-    Tree.save('sample', root)
-    root = Tree.load('sample')
-    Tree.show(root)
+    # Tree.save('sample', root)
+    # root = Tree.load('sample')
+
+    root = Boxes()
+    # Tree.show(root)
+    canvas = Tree.rasterize(root)
+    import matplotlib.pyplot as plt
+    plt.figure()
+    plt.imshow(canvas, vmin=0, vmax=1, cmap='gray')
+    plt.show()
+    plt.close()
 
     # for ii in range(3):
     #     root = ShortMany()

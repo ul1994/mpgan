@@ -35,6 +35,9 @@ ZSIZE = 10
 # ITERS = 1
 LSTM_SIZE=512
 BSIZE = 64
+HSIZE = 32
+REZ = 16
+READSIZE = 256
 LR = 2e-5
 # all_letters = 'abcdefghijklmnopqrstuvwxyz'
 all_letters = 'abcdefghijklmnopqrstuvwxyz012345'
@@ -43,10 +46,12 @@ assert n_letters == 32
 adversarial_loss = torch.nn.BCELoss().to(device)
 RESOLUTION = 16
 MAXLEN = 8
+TARGETTREE = TallFew
 
 spawn = SpawnNet(hsize=n_letters, zsize=ZSIZE, resolution=RESOLUTION).to(device)
-# readout = ReadNet(hsize=n_letters, resolution=MAXLEN).to(device)
-discrim = DiscrimNet(hsize=n_letters).to(device)
+readout = ReadNet(
+	hsize=n_letters, resolution=RESOLUTION, readsize=READSIZE).to(device)
+discrim = DiscrimNet(hsize=n_letters, readsize=READSIZE).to(device)
 
 gen_opt = optim.Adam([
 	{ 'params': spawn.parameters() },
@@ -73,65 +78,6 @@ def score(guess, real):
 	assert correct <= 1.0
 	return correct
 
-def toEmbedding(string):
-	# (seqlen x batch x embedlen)
-	sample = [] # series of embeddings per t
-
-	# for sii in range(len(strings)):
-	for li in range(len(string)):
-		# tensor = torch.zeros(n_letters)
-		tensor = [0 for _ in range(n_letters)]
-		letter = string[li]
-		tensor[all_letters.find(letter)] = 1
-		# tensor = Variable(tensor).to(device)
-
-		sample.append(tensor)
-	return sample
-
-def drawSample(verbose=False):
-	hat1 = 'a'
-
-	strlen = randint(MAXLEN - 3, MAXLEN-1)
-
-	line = []
-	for ii in range(MAXLEN):
-		if ii < strlen:
-			line += [ hat1[randint(0, len(hat1)-1)] ]
-		else:
-			line += ['x']
-	shuffle(line)
-	for ii in range(MAXLEN, RESOLUTION):
-		line += ['x']
-	assert len(line) == RESOLUTION
-	line = ''.join(line)
-
-	if verbose: print(line)
-
-	tensor = toEmbedding(line)
-	return tensor, line
-
-def toString(embedding, upto=MAXLEN):
-	embedding = np.swapaxes(embedding, 1, 0)
-	strlen = len(embedding) # num chars
-	try:
-		assert embedding.shape[0] == RESOLUTION
-		assert embedding.shape[1] == n_letters
-	except:
-		print(embedding.shape[0])
-		print(embedding.shape[1])
-		assert False
-
-	line = ''
-	for ii in range(strlen):
-		vect = embedding[ii]
-		# vect = vect.detach().cpu().numpy()
-		ind = np.argmax(vect)
-		line += all_letters[ind]
-	return line[:upto]
-# input is string in embedded form per char
-# target is input shifted by one (string[1:]) + EOS termination char
-# LSTM will be trained to guess the next char
-
 n_iters = 100000
 print_every = 5000
 plot_every = 500
@@ -150,11 +96,14 @@ for iter in range(1, n_iters + 1):
 	spawn.zero_grad()
 	# readout.zero_grad()
 
-	embeddings = []
+	readouts = []
 	for bii in range(bhalf):
-		sample, as_string = drawSample(verbose=False)
-		embeddings.append(sample)
-	samples = torch.zeros(bhalf, n_letters, RESOLUTION)
+		root = TARGET_TREEDEF()
+		# root = Tree.prune(root, tsteps)
+		R_G = Tree.readout(root, readout)
+		readouts.append(R_G)
+
+	samples = torch.zeros(bhalf, READSIZE)
 	for wii, word in enumerate(embeddings):
 		for vii, vector in enumerate(word):
 			samples[wii, :, vii] = torch.tensor(vector)
