@@ -23,10 +23,22 @@ import torch.optim as optim
 from torchvision import datasets, transforms
 from random import randint
 # from models.arbseq import SpawnNet, ReadNet, DiscrimNet
-from models.arbflat import SpawnNet, ReadNet, DiscrimNet
+# from models.arbup import SpawnNet, ReadNet, DiscrimNet
 from torch.autograd import Variable
 import numpy as np
 from numpy.random import shuffle
+import argparse
+
+parser = argparse.ArgumentParser()
+parser.add_argument('--model', type=str, required=True)
+args = parser.parse_args()
+
+if args.model == 'arbflat':
+	from models.arbflat import SpawnNet, DiscrimNet
+elif args.model == 'arbup':
+	from models.arbup import SpawnNet, DiscrimNet
+else:
+	raise Exception('Unknown model...')
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
