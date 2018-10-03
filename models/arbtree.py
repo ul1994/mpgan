@@ -115,36 +115,38 @@ class ReadNet(nn.Module):
 		return x
 
 class DiscrimNet(nn.Module):
-	def __init__(self, hsize, resolution=16):
+	def __init__(self, readsize=512):
 		super(DiscrimNet, self).__init__()
 
-		def discriminator_block(in_filters, out_filters, stride=1, bn=True):
-			block = [   nn.Conv1d(in_filters, out_filters, 3, stride, 1),
-						nn.LeakyReLU(0.2, inplace=True),
-						nn.Dropout(0.25)]
-			if bn:
-				block.append(nn.BatchNorm1d(out_filters, 0.8))
-			return block
+		# def discriminator_block(in_filters, out_filters, stride=1, bn=True):
+		# 	block = [   nn.Conv1d(in_filters, out_filters, 3, stride, 1),
+		# 				nn.LeakyReLU(0.2, inplace=True),
+		# 				nn.Dropout(0.25)]
+		# 	if bn:
+		# 		block.append(nn.BatchNorm1d(out_filters, 0.8))
+		# 	return block
 
 		self.model = nn.Sequential(
-			*discriminator_block(hsize, 64, stride=1, bn=False),
-			*discriminator_block(64, 128, stride=2),
-			*discriminator_block(128, 256, stride=1),
-			*discriminator_block(256, 512, stride=2),
+			nn.Linear(readsize, 512),
+			nn.LeakyReLU(0.2, inplace=True),
+			nn.Dropout(0.25),
+
+			nn.Linear(512, 512),
+			nn.LeakyReLU(0.2, inplace=True),
+			nn.Dropout(0.25),
 		)
 
 		# The height and width of downsampled image
 		self.adv_layer = nn.Sequential(
-			nn.Linear(4 * 512, 2048),
+			nn.Linear(512, 1024),
 			nn.LeakyReLU(0.2, inplace=True),
-			nn.Linear(2048, 1),
+			nn.Linear(1024, 1),
 			nn.Sigmoid()
 		)
 
 	def forward(self, x):
 		x = self.model(x)
 
-		x = x.view(x.shape[0], -1)
 		x = self.adv_layer(x)
 
 		return x
