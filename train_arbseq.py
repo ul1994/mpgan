@@ -2,8 +2,12 @@
 # Validates that seqs of semi-random length (but around prior mean)
 #  can be learned using SpawnNet
 
+
 from __future__ import unicode_literals, print_function, division
 import os, sys
+os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"   # see issue #152
+os.environ["CUDA_VISIBLE_DEVICES"]="0"
+
 from io import open
 import glob
 import os

@@ -1,4 +1,10 @@
 
+'''
+Model defined by Generator, Readout, and Discriminiator
+
+Matches distribution of sequence with agnostic ordering.
+'''
+
 from __future__ import print_function
 import argparse
 import torch
@@ -6,183 +12,163 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torchvision import datasets, transforms
+from torch.autograd import Variable
+import numpy as np
+from operator import mul
 
 class SpawnNet(nn.Module):
-	# Operations on every node.
-	# Function of node's h_v, graph's R_G, and sampling from noise Z.
-
-	# Spawns arbitrary # of children for a node:
-	#  Child spawns as feature vector h_c per RNN step
-	#  Sigmoid output brach explicitly states end of sqeuence
-
-	def __init__(self, hsize, zsize, hidden=128):
+	def __init__(self, hsize, resolution=8, zsize=20):
 		super(SpawnNet, self).__init__()
-		self.fcs = [
-			# each observation is h_v vertex, R_G readout, noise Z
-			nn.Linear(hsize + hsize + zsize, 128),
-			nn.Linear(128, 512),
+
+		self.fflat = 4
+
+		self.inop = nn.Sequential(
+			nn.Linear(zsize + hsize, self.fflat * 128),
+			nn.LeakyReLU(0.2, inplace=True),
+			nn.Upsample(scale_factor=2),
+
+			nn.Linear(self.fflat * 128 * 2, self.fflat * 128 * 2),
+			nn.LeakyReLU(0.2, inplace=True),
+			nn.Upsample(scale_factor=2),
+
+			nn.Linear(self.fflat * 128 * 4, self.fflat * 128 * 4),
+			nn.LeakyReLU(0.2, inplace=True),
+
+			# prepare to 2D
+			nn.Linear(self.fflat * 128 * 4, self.fflat * 128 * 4 * 4),
+		)
+
+		self.model = nn.Sequential(
+			nn.BatchNorm2d(128),
+
+			nn.Upsample(scale_factor=(2, 1)),
+			nn.Conv2d(128, 128, (1, 3), stride=1, padding=(0, 1)),
+			nn.LeakyReLU(0.2, inplace=True),
+			nn.BatchNorm2d(128, 0.8),
+
+			nn.Upsample(scale_factor=(2, 1)),
+			nn.Conv2d(128, 64, (1, 3), stride=1, padding=(0, 1)),
+			nn.LeakyReLU(0.2, inplace=True),
+			nn.BatchNorm2d(64, 0.8),
+
+			nn.Upsample(scale_factor=(2, 1)),
+			nn.Conv2d(64, 1, (1, 3), stride=1, padding=(0, 1)),
+
+			nn.Sigmoid()
+		)
+
+		self.noise_size = zsize
+
+	def forward(self, noise, h_v):
+		# function of:
+		#    noise distribution
+		#    h_v hidden representation of parent
+
+		noise = noise.unsqueeze(1)
+		h_v = h_v.unsqueeze(1)
+		x = torch.cat([noise, h_v], -1)
+
+		x = self.inop(x)
+		x = x.view(-1, 128, 4, self.fflat * 4)
+		x = self.model(x)
+
+		x = x.view(-1, 32, 16)
+		return x
+
+	def init_noise(self, size=None, batch=None, device='cpu'):
+		if size is None: size = self.noise_size
+		if batch is None:
+			noise = Variable(torch.randn(size).to(device))
+			return noise
+		else:
+			noise = Variable(torch.randn(batch, size).to(device))
+			return noise
+
+class ReadNet(nn.Module):
+	def __init__(self, hsize, resolution=16, readsize=256):
+		super(ReadNet, self).__init__()
+
+		flatres = hsize * (resolution + 1 + 1)
+		self.model = nn.Sequential(
+			nn.Linear(flatres, 512),
+			nn.LeakyReLU(0.2, inplace=True),
 			nn.Linear(512, 512),
-			nn.Linear(512, 128),
-		]
+			nn.LeakyReLU(0.2, inplace=True),
+			nn.Linear(512, readsize),
+			nn.Tanh()
+		)
 
-		self.hout = [
-			nn.Linear(128, 128),
-			nn.Linear(128, 128),
-			nn.Linear(128, hsize)
-		]
+	# Reads a set of h_vs and
+	#  turns them into a meaningful representation
+	def forward(self, h_parent, h_self, h_children):
+		# Function of:
+		#  Collection of child h_vs: hsize x resolution
+		#  h_v of self
+		#  h_v of parent
 
-		self.tout = [ # termination criteria
-			nn.Linear(128, 128),
-			nn.Linear(128, 128),
-			nn.Linear(128, 1)
-		]
+		h_parent = h_parent.unsqueeze(2)
+		h_self = h_self.unsqueeze(2)
+		x = torch.cat([h_parent, h_self, h_children], -1)
+		x = x.view(x.shape[0], -1)
 
-		self.lstm = nn.LSTM(128, hidden)
-
-	def forward(self, h_v, R_G, noise, hidden):
-		# hidden enocdes the progress in sequence
-		context = torch.cat([h_v, R_G, noise])
-		x = F.relu(self.fcs[0](context))
-		x = F.relu(self.fcs[1](x))
-		x = F.relu(self.fcs[2](x))
-		x = F.relu(self.fcs[3](x))
-
-		# output for this timestep: output at T , cell state
-		# The axes semantics are (num_layers, minibatch_size, hidden_dim)
-		t_output, hidden = self.lstm(x, hidden) # TODO: reassign hidden
-
-		# (h_v, terminate)_t are inferred with t_output
-		h_v = F.relu(self.hout[0](t_output))
-		h_v = F.relu(self.hout[1](h_v))
-		h_v = nn.Tanh(self.hout[2](h_v))
-
-		term = F.relu(self.tout[0](t_output))
-		term = F.relu(self.tout[1](term))
-		term = nn.Sigmoid(self.tout[2](term))
-		# 0 to continue, 1 to terminate
-
-		return h_v, term
-
-	def init_hidden(self):
-		# These are placeholders for LSTM cell state
-		return (
-			torch.zeros(1, 1, self.hidden_dim),
-			torch.zeros(1, 1, self.hidden_dim))
-
-class MsgNet(nn.Module):
-	# Msg encoder from h_w to h_v
-
-	def __init__(self, hsize):
-		super(MsgNet, self).__init__()
-		self.fcs = [
-			nn.Linear(hsize + hsize, 128),
-			nn.Linear(128, hsize)
-		]
-
-	def forward(self, hv, hw):
-		x = torch.cat([hv, hw], 0)
-		x = F.relu(self.fcs[0](hw))
-		x = self.fcs[1](x)
-		return nn.tanh()(x)
-
-class UpdateNet(nn.Module):
-	def __init__(self, hsize):
-		super(UpdateNet, self).__init__()
-		self.fcs = [
-			nn.Linear(hsize*2, 128),
-			nn.Linear(128, hsize)
-		]
-
-	def forward(self, hv, hw):
-		x = torch.cat([hv, hw], 0)
-		x = F.relu(self.fcs[0](x))
-		x = self.fcs[1](x)
-
-		return nn.Tanh()(x)
-
-class ReadoutNet(nn.Module):
-	# NOTE: Where h_v is entirely random, readouts will likely ignore info from h_v
-	#  and infer solely based on contribution to children_readout
-
-	def __init__(self, hsize):
-		super(ReadoutNet, self).__init__()
-		self.fcs = [
-			nn.Linear(hsize * 2, hsize),
-			nn.Linear(hsize, hsize)
-		]
-
-	def forward(self, hvert, children_readout):
-		x = torch.cat([hvert, children_readout], 0)
-		x = F.relu(self.fcs[0](x))
-		x = self.fcs[1](x)
-		return torch.tanh(x)
+		x = self.model(x)
+		return x
 
 class DiscrimNet(nn.Module):
-	def __init__(self, hsize):
+	def __init__(self, hsize, resolution=16):
 		super(DiscrimNet, self).__init__()
-		self.fcs = [
-			nn.Linear(hsize, 1024),
-			nn.Linear(1024, 1024),
-			nn.Linear(1024, 1024),
-			nn.Linear(1024, 1),
-		]
+
+		def discriminator_block(in_filters, out_filters, stride=1, bn=True):
+			block = [   nn.Conv1d(in_filters, out_filters, 3, stride, 1),
+						nn.LeakyReLU(0.2, inplace=True),
+						nn.Dropout(0.25)]
+			if bn:
+				block.append(nn.BatchNorm1d(out_filters, 0.8))
+			return block
+
+		self.model = nn.Sequential(
+			*discriminator_block(hsize, 64, stride=1, bn=False),
+			*discriminator_block(64, 128, stride=2),
+			*discriminator_block(128, 256, stride=1),
+			*discriminator_block(256, 512, stride=2),
+		)
+
+		# The height and width of downsampled image
+		self.adv_layer = nn.Sequential(
+			nn.Linear(4 * 512, 2048),
+			nn.LeakyReLU(0.2, inplace=True),
+			nn.Linear(2048, 1),
+			nn.Sigmoid()
+		)
 
 	def forward(self, x):
-		x = F.relu(self.fcs[0](x))
-		x = F.relu(self.fcs[1](x))
-		x = F.relu(self.fcs[2](x))
-		x = self.fcs[3](x)
+		x = self.model(x)
 
-		return nn.Sigmoid()(x)
+		x = x.view(x.shape[0], -1)
+		x = self.adv_layer(x)
 
-def init_weights(m):
-	if type(m) == nn.Linear:
-		torch.nn.init.xavier_uniform(m.weight)
-		m.bias.data.fill_(0.01)
-
-class Model:
-	def __init__(self, hsize, zsize):
-		self.discrim = DiscrimNet(hsize=hsize)
-
-		self.readout = ReadoutNet(hsize=hsize)
-		self.msg = MsgNet(hsize=hsize)
-		self.update = UpdateNet(hsize=hsize)
-		self.spawn = SpawnNet(hsize=hsize, zsize=zsize)
-
-		# self.discrim.apply(init_weights)
-		# self.readout.apply(init_weights)
-		# self.msg.apply(init_weights)
-		# self.update.apply(init_weights)
-		# self.spawn.apply(init_weights)
-
-	def zero_common(self):
-		self.readout.zero_grad()
-
-	def zero_generator(self):
-		self.msg.zero_grad()
-		self.update.zero_grad()
-		self.spawn.zero_grad()
-
-	def zero_discrim(self):
-		self.discrim.zero_grad()
+		return x
 
 if __name__ == '__main__':
-	import math
-	from structs import *
 
-	HSIZE = 5
+	HSIZE = 32
+	REZ = 16
+	READSIZE = 256
 
-	readout = ReadoutNet(hsize=HSIZE)
-	root = TallFew()
+	model = SpawnNet(hsize=HSIZE, zsize=50, resolution=REZ)
+	discrim = DiscrimNet(readsize=READSIZE)
+	readout = ReadNet(hsize=HSIZE, resolution=REZ, readsize=READSIZE)
 
-	h_rand = torch.rand(HSIZE,)
-	rsum_rand = torch.rand(HSIZE,)
-	R_G = readout(h_rand, rsum_rand)
-	print('Random readout result     :', R_G.size())
-	print(R_G)
+	noise = model.init_noise(batch=5)
+	random_h = model.init_noise(batch=5, size=HSIZE)
+	print('Noise in :', noise[0][:5], '...')
+	print('H in     :', random_h[0][:5], '...')
 
+	out = model(noise, random_h)
+	print('Spawn out:', out.size())
 
-	R_G = Tree.readout(root, readout)
-	print('Recursive readout result  :', R_G.size())
-	print(R_G)
-	# Tree.show(root)
+	read = readout(random_h, random_h, out)
+	print('Read out :', read.size())
+
+	valid = discrim(read)
+	print('Disc out:', valid.size())
