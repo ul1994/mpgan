@@ -25,12 +25,12 @@ class SpawnNet(nn.Module):
 	def __init__(self, hsize, resolution=8, zsize=20):
 		super(SpawnNet, self).__init__()
 
-		# desired output: 26 x 8
-		#       noise in: 100 x 1
-		# noise reshaped: 4 8 16 32, 4 8 16
+		# supports resolutions (# children): 4 ~ 16
+		# supports hsize (# hidden dim): 4 ~ 32
 
-		# N by M suitable where N << M
-		self.fflat = 4
+		self.resolution = resolution
+		self.zsize = zsize
+		self.hsize = hsize
 
 		def fclayer(din, dout, upsamp=False):
 			ops = [
@@ -40,7 +40,7 @@ class SpawnNet(nn.Module):
 			if upsamp: ops += [nn.Upsample(scale_factor=2)]
 			return ops
 
-		def conv1d(fin, fout, kernel=(1, 3), padding=(1, 1), upsamp=None, norm=True):
+		def conv2d(fin, fout, kernel=(1, 3), padding=(1, 1), upsamp=None, norm=True):
 			ops = [
 				nn.Conv2d(fin, fout, kernel, 1, padding),
 				nn.LeakyReLU(0.2, inplace=True),
@@ -50,39 +50,62 @@ class SpawnNet(nn.Module):
 			return ops
 
 
-		self.inop = nn.Sequential(
-			*fclayer(zsize + hsize, self.fflat**2 * 256),
-			# *fclayer(self.fflat * 128 * 2, self.fflat * 128 * 2, upsamp=True),
+		self.fflat = 16
+		basef = 4
+		baseres = 4
+		basedim = self.fflat * baseres
+		prevdim = basedim
+		dense_list = []
+		for lii in range(3):
+			din = zsize + hsize if lii == 0 else prevdim
+			dout = basedim
+			dense_list += [*fclayer(din, dout)]
 
-			# # expansion from 1D to 2D
-			# nn.Linear(self.fflat * 128 * 4, self.fflat * 128 * 4 * 4),
-			# target is (bsize, nChannels, hsize, resolution)
-		)
+			if basedim < resolution * self.fflat:
+				prevdim = basedim
+				basedim *= 2
+
+		self.dense = nn.Sequential(*dense_list)
+
+
+		# basef = 4
+		# prevf = basef
+		# conv_list = []
+		# for lii in range(1):
+		# 	fin = basef if lii == 0 else prefv
+		# 	fout = basef
+		# 	conv_list += [*conv2d(fin, fout, (1, 3), (0, 1))]
+
+		# 	# if basedim < resolution * self.fflat:
+		# 	# 	prevdim = basedim
+		# 	# 	basedim *= 2
+		upopt = [None, None, None]
+		for ii in range(3):
+			if basef < hsize:
+				upopt[ii] = (1, 2)
+				basef *= 2
 
 		self.convs = nn.Sequential(
-			# resolution expansion
-			*conv1d(256, 256, (1, 3), (0, 1), upsamp=(1, 2)),
-			*conv1d(256, 256, (1, 3), (0, 1), upsamp=(1, 2)),
-
-			# hidden dim expansion
-			*conv1d(256, 256, (3, 1), (1, 0), upsamp=(2, 1)),
-			*conv1d(256, 128, (3, 1), (1, 0), upsamp=(2, 1)),
-			*conv1d(128, 128, (3, 1), (1, 0), upsamp=(2, 1)),
-			*conv1d(128, 1, (1, 1), (0, 0), norm=False),
-
-			nn.Sigmoid()
+			*conv2d(4, 4, (3, 1), (1, 0), upsamp=upopt[0]),
+			*conv2d(4, 4, (3, 1), (1, 0), upsamp=upopt[1]),
+			*conv2d(4, 1, (3, 1), (1, 0), upsamp=upopt[2]),
+			# *conv2d(128, 1, (1, 1), (0, 0), norm=False),
+			# nn.Sigmoid()
 		)
 
 		self.noise_size = zsize
 
 	def forward(self, noise, h_v):
 		x = torch.cat([noise, h_v], -1)
-		x = self.inop(x)
-		x = x.view(-1, 256, self.fflat, self.fflat)
 
+		x = self.dense(x)
+
+		fsize = int(self.fflat**0.5)
+		# dense output feeds into # filters and # hiddens
+		x = x.view(-1, fsize, fsize, self.resolution)
 		x = self.convs(x)
 
-		x = x.view(-1, 32, 16)
+		x = x.view(-1, self.hsize, self.resolution)
 		return x
 
 	def init_noise(self, size=None, batch=None, device='cpu'):
@@ -98,7 +121,7 @@ class ReadNet(nn.Module):
 	def __init__(self, hsize, resolution=16, readsize=32):
 		super(ReadNet, self).__init__()
 
-		flatres = hsize * (resolution + 1)
+		flatres = hsize + (readsize * resolution)
 		self.model = nn.Sequential(
 			nn.Linear(flatres, 512),
 			nn.LeakyReLU(0.2, inplace=True),
@@ -115,14 +138,15 @@ class ReadNet(nn.Module):
 		#  Collection of children readouts: (readsize x resolution)
 		#  h_v of self
 
-		h_self = h_self.unsqueeze(len(h_self.shape))
-		# print(h_self.size(), r_children.size())
-		x = torch.cat([h_self, r_children], -1)
-		if len(x.shape) == 2:
-			x = x.view(-1)
+		# flatten everything
+		if len(h_self.shape) <= 2:
+			h_self = h_self.view(-1)
+			r_children = r_children.view(-1)
 		else:
-			x = x.view(x.shape[0], -1)
-		# print(x.size())
+			h_self = h_self.view(h_self.shape[0], -1)
+			r_children = r_children.view(r_children.shape[0], -1)
+
+		x = torch.cat([h_self, r_children], -1)
 		x = self.model(x)
 		return x
 
@@ -165,33 +189,71 @@ class DiscrimNet(nn.Module):
 
 if __name__ == '__main__':
 
-	HSIZE = 32
-	REZ = 16
-	READSIZE = HSIZE
+	HSIZE = 32       # hidden dimension (internal represent: cx, cy, ww, hh)
+	REZ = 16         # resolution (max supported children per node)
+	READSIZE = 32   # output size of graph readout
+	ZSIZE = 5      # size of latent distribution
 
-	model = SpawnNet(hsize=HSIZE, zsize=50, resolution=REZ)
-	discrim = DiscrimNet(readsize=READSIZE)
-	readout = ReadNet(hsize=HSIZE, resolution=REZ, readsize=READSIZE)
+	spawn = SpawnNet(hsize=HSIZE, zsize=ZSIZE, resolution=REZ)
 
-	noise = model.init_noise(batch=5)
-	random_h = model.init_noise(batch=5, size=HSIZE)
-	print('Noise in :', noise[0][:5], '...')
-	print('H in     :', random_h[0][:5], '...')
+	# latent distribution representing P(children shapes | parent shape)
+	children_noise = spawn.init_noise()
+	random_parent_hv = spawn.init_noise(size=HSIZE)
+	print('Noise in :', children_noise[:5], '...')
+	print('H in     :', random_parent_hv[:5], '...')
+	children = spawn(children_noise, random_parent_hv)
+	print('Spawn out:', children.size())
 
-	out = model(noise, random_h)
-	print('Spawn out:', out.size())
+	try:
+		assert children.size(1) == HSIZE
+		assert children.size(2) == REZ
+	except:
+		raise Exception(children.size())
 
-	read = readout(random_h, out)
-	print('Read out :', read.size())
+	print()
+	print()
 
-	valid = discrim(read)
-	print('Disc out:', valid.size())
+	HSIZE = 4       # hidden dimension (internal represent: cx, cy, ww, hh)
+	REZ = 4         # resolution (max supported children per node)
+	READSIZE = 32   # output size of graph readout
+	ZSIZE = 5      # size of latent distribution
 
-	import sys
-	sys.path.append('/home/ubuntu/mpgan')
-	from structs import *
+	spawn = SpawnNet(hsize=HSIZE, zsize=ZSIZE, resolution=REZ)
 
-	readout = ReadNet(hsize=4, resolution=REZ, readsize=4)
-	root = TallFew(endh=1)
-	# R_G = Tree.readout_fill(root, readout, fill=REZ)
+	# latent distribution representing P(children shapes | parent shape)
+	children_noise = spawn.init_noise()
+	random_parent_hv = spawn.init_noise(size=HSIZE)
+	print('Noise in :', children_noise[:5], '...')
+	print('H in     :', random_parent_hv[:5], '...')
+	children = spawn(children_noise, random_parent_hv)
+	print('Spawn out:', children.size())
+
+	try:
+		assert children.size(1) == HSIZE
+		assert children.size(2) == REZ
+	except:
+		raise Exception(children.size())
+
+
+	# discrim = DiscrimNet(readsize=READSIZE)
+	# readout = ReadNet(hsize=HSIZE, resolution=REZ, readsize=READSIZE)
+
+
+	# out = model(noise, random_h)
+	# print('Spawn out:', out.size())
+
+	# read = readout(random_h, out)
+	# print('Read out :', read.size())
+
+	# valid = discrim(read)
+	# print('Disc out:', valid.size())
+
+	# import sys
+	# sys.path.append('/home/ubuntu/mpgan')
+	# from structs import *
+
+	# readout = ReadNet(hsize=4, resolution=REZ, readsize=READSIZE)
+	# root = Hanoi(endh=1)
+	# R_G = Tree.readout_fill(root, readout, readsize=READSIZE, fill=REZ)
 	# print('Tree readout', R_G.size())
+	# print(R_G)

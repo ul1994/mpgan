@@ -4,9 +4,9 @@
 
 
 from __future__ import unicode_literals, print_function, division
-import os, sys
-os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"   # see issue #152
-os.environ["CUDA_VISIBLE_DEVICES"]="0"
+# import os, sys
+# os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"   # see issue #152
+# os.environ["CUDA_VISIBLE_DEVICES"]="0"
 
 from io import open
 import glob
@@ -22,97 +22,73 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torchvision import datasets, transforms
 from random import randint
-# from models.arbseq import SpawnNet, ReadNet, DiscrimNet
-from models.arbflat import SpawnNet, ReadNet, DiscrimNet
 from torch.autograd import Variable
 import numpy as np
 from numpy.random import shuffle
+# from train_arbseq import score
+from structs import *
+from models.arbtree import SpawnNet, ReadNet, DiscrimNet
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-# HSIZE = 5
-ZSIZE = 10
-# ITERS = 1
-LSTM_SIZE=512
+ZSIZE = 20
 BSIZE = 64
-HSIZE = 32
-REZ = 16
-READSIZE = 256
+HSIZE = 4      # hidden representation is simply the cx, cy, size dimensions
+REZ =  4       # maximal number of children supported
+READSIZE = 32  # size of node readout
 LR = 2e-5
-# all_letters = 'abcdefghijklmnopqrstuvwxyz'
-all_letters = 'abcdefghijklmnopqrstuvwxyz012345'
-n_letters = len(all_letters)
-assert n_letters == 32
+n_iters = 100000
+bhalf = BSIZE // 2
+real_labels = Variable(torch.ones(bhalf, 1), requires_grad=False).to(device)
+fake_labels = Variable(torch.zeros(bhalf, 1), requires_grad=False).to(device)
 adversarial_loss = torch.nn.BCELoss().to(device)
-RESOLUTION = 16
-MAXLEN = 8
-TARGETTREE = TallFew
+TARGET = Hanoi
 
-spawn = SpawnNet(hsize=n_letters, zsize=ZSIZE, resolution=RESOLUTION).to(device)
+
+
+spawn = SpawnNet(
+	hsize=HSIZE, zsize=ZSIZE, resolution=REZ).to(device)
 readout = ReadNet(
-	hsize=n_letters, resolution=RESOLUTION, readsize=READSIZE).to(device)
-discrim = DiscrimNet(hsize=n_letters, readsize=READSIZE).to(device)
+	hsize=HSIZE, resolution=REZ, readsize=READSIZE).to(device)
+discrim = DiscrimNet(readsize=READSIZE).to(device)
 
+# NOTE: dont tune readout here; it'll optimize to fool the discrim!
 gen_opt = optim.Adam([
 	{ 'params': spawn.parameters() },
-	# NOTE: dont tune readout here; it'll optimize to fool the discrim!
 ], lr=2e-4, weight_decay=1e-4)
 
 # Readout aligns with discriminator
 #  The goal of readout is to extract as much distinguishing info
 #   from any samples shown
 discrim_opt = optim.Adam([
+	{ 'params': readout.parameters() },
 	{ 'params': discrim.parameters() },
 ], lr=2e-5, weight_decay=1e-4)
 
-# bad readout can throw off training
-# readout_opt = optim.Adam([
-# 	{ 'params': readout.parameters() },
-# ], lr=2e-6, weight_decay=1e-4)
 
-def score(guess, real):
-	guess = (guess.cpu() > 0.5).squeeze()\
-		.type(torch.FloatTensor)
-	correct = (guess == real.squeeze().cpu()).sum()
-	correct = correct.numpy() / guess.cpu().size(0)
-	assert correct <= 1.0
-	return correct
 
-n_iters = 100000
-print_every = 5000
-plot_every = 500
-all_losses = []
-total_loss = 0 # Reset every plot_every iters
-start = time.time()
-
-bhalf = BSIZE // 2
-real_labels = Variable(torch.ones(bhalf, 1), requires_grad=False).to(device)
-fake_labels = Variable(torch.zeros(bhalf, 1), requires_grad=False).to(device)
-
-disc_score = 1.0
-genmode = False
 for iter in range(1, n_iters + 1):
-
 	spawn.zero_grad()
-	# readout.zero_grad()
+	readout.zero_grad()
 
 	readouts = []
 	for bii in range(bhalf):
-		root = TARGET_TREEDEF()
-		# root = Tree.prune(root, tsteps)
-		R_G = Tree.readout(root, readout)
+		root = TARGET(endh=1)
+		R_G = Tree.readout_fill(root, readout, readsize=READSIZE, fill=REZ, device=device)
 		readouts.append(R_G)
 
-	samples = torch.zeros(bhalf, READSIZE)
-	for wii, word in enumerate(embeddings):
-		for vii, vector in enumerate(word):
-			samples[wii, :, vii] = torch.tensor(vector)
-	samples = Variable(samples).to(device)
+	real_readouts = torch.stack(readouts).to(device)
 
-	real_readouts = samples
-	# real_readouts = readout(samples)
+	for bii in range(bhalf):
+		root = TARGET(endh=0)
 
-	noise_sample = spawn.init_noise(device=device, batch=bhalf)
+		noise_sample = spawn.init_noise(device=device)
+		nodespec = spawn(noise_sample, root.h_v)
+		# print(noise_sample.size())
+		break
+
+
+	break
 	fake_hs = spawn(noise_sample)
 
 	__fake_embeds = fake_hs.detach().cpu().numpy()
