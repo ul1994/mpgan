@@ -30,7 +30,8 @@ from structs import *
 from models.arbtree import SpawnNet, ReadNet, DiscrimNet
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-
+Tree.set_device(device)    # tree-level operations
+Node.set_device(device)    # give device handle to nodes
 ZSIZE = 20
 BSIZE = 64
 HSIZE = 4      # hidden representation is simply the cx, cy, size dimensions
@@ -44,7 +45,24 @@ fake_labels = Variable(torch.zeros(bhalf, 1), requires_grad=False).to(device)
 adversarial_loss = torch.nn.BCELoss().to(device)
 TARGET = Hanoi
 
+'''
+Training Phases:
 
+* Generative
+  1. For depth D = N
+  2. Gather target trees
+  3. Generate frontier for tree of depth D = N - 1
+  4. Adversarial training between target and generated
+  5. Repeat for D = 1 ... N
+
+* Iterative
+  1. For trees of arb length
+  2. Gather target trees
+  3. Generate trees of arb depth until termination
+  3.5  Run message passing/iteration for T = M steps
+  4. Adversarial training of iteration model against target
+
+'''
 
 spawn = SpawnNet(
 	hsize=HSIZE, zsize=ZSIZE, resolution=REZ).to(device)
@@ -66,7 +84,6 @@ discrim_opt = optim.Adam([
 ], lr=2e-5, weight_decay=1e-4)
 
 
-
 for iter in range(1, n_iters + 1):
 	spawn.zero_grad()
 	readout.zero_grad()
@@ -74,7 +91,7 @@ for iter in range(1, n_iters + 1):
 	readouts = []
 	for bii in range(bhalf):
 		root = TARGET(endh=1)
-		R_G = Tree.readout_fill(root, readout, readsize=READSIZE, fill=REZ, device=device)
+		R_G = Tree.readout_fill(root, readout, readsize=READSIZE, fill=REZ)
 		readouts.append(R_G)
 
 	real_readouts = torch.stack(readouts).to(device)
@@ -82,8 +99,9 @@ for iter in range(1, n_iters + 1):
 	for bii in range(bhalf):
 		root = TARGET(endh=0)
 
-		noise_sample = spawn.init_noise(device=device)
+		noise_sample = spawn.init_noise().to(device)
 		nodespec = spawn(noise_sample, root.h_v)
+		# Tree.spawn
 		# print(noise_sample.size())
 		break
 

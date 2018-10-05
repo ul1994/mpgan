@@ -9,10 +9,15 @@ import torch.optim as optim
 import torch.nn.functional as F
 
 class Node:
+    device = None
+
+    @staticmethod
+    def set_device(device):
+        Node.device = device
 
     idcounter = 0
 
-    def __init__(self, height=0, hsize=4, spec=None, grads=True, parent=None, device=None):
+    def __init__(self, height=0, hsize=4, spec=None, grads=True, parent=None):
         self.parent = parent
         self.id = '%d' % Node.idcounter
         Node.idcounter += 1
@@ -21,11 +26,11 @@ class Node:
 
         self.height = height
 
-        self.h_v = Variable(torch.rand(hsize,), requires_grad=grads)
+        self.h_v = Variable(torch.rand(hsize,), requires_grad=grads).to(Node.device)
 
         if spec is not None:
             self.id = spec['id']
-            self.h_v = Variable(torch.tensor(spec['h_v']))
+            self.h_v = Variable(torch.tensor(spec['h_v'])).to(Node.device)
             self.height = spec['height']
 
             for childspec in spec['children']:
@@ -59,6 +64,8 @@ class Node:
         # return '%s' % (self.id)
 
 class Tree:
+    device = None
+
     @staticmethod
     def ve(root):
 
@@ -111,7 +118,7 @@ class Tree:
         # TODO: Test against graph-level readout
 
         def rec(node, rfunc):
-            rsum = Variable(torch.zeros(node.hsize,))
+            rsum = Variable(torch.zeros(node.hsize,)).to(Tree.device)
             for child in node.children:
                 rsum.add_(rec(child, rfunc))
 
@@ -119,7 +126,11 @@ class Tree:
         return rec(root, rfunc)
 
     @staticmethod
-    def readout_fill(root, rfunc, readsize=32, fill=16, device=None):
+    def set_device(device):
+        Tree.device = device
+
+    @staticmethod
+    def readout_fill(root, rfunc, readsize=32, fill=16):
         # readout but "zero padded" up to 'fill' units
 
         def rec(node, rfunc, fill):
@@ -127,16 +138,16 @@ class Tree:
             for child in node.children:
                 child_reads.append(rec(child, rfunc, fill))
             while len(child_reads) < fill:
-                child_reads.append(torch.zeros(readsize).to(device))
+                child_reads.append(torch.zeros(readsize).to(Tree.device))
             child_reads = torch.stack(child_reads)
 
-            return rfunc(node.h_v.to(device), child_reads.to(device))
+            return rfunc(node.h_v, child_reads)
         return rec(root, rfunc, fill)
 
     @staticmethod
     def send(root, mfunc):
         def rec(node, mfunc):
-            msg = Variable(torch.zeros(node.hsize,))
+            msg = Variable(torch.zeros(node.hsize,)).to(Tree.device)
             for child in node.children:
                 msg.add_(mfunc(node.h_v, child.h_v))
             if node.parent is not None:
