@@ -12,12 +12,14 @@ class Node:
     device = None
 
     @staticmethod
-    def set_device(device):
+    def init(device):
         Node.device = device
+        # Tree.resolution = resolution
+        # Tree.readsize = readsize
 
     idcounter = 0
 
-    def __init__(self, height=0, hsize=4, spec=None, grads=True, parent=None):
+    def __init__(self, height=0, hsize=4, spec=None, grads=True, parent=None, h_v=None):
         self.parent = parent
         self.id = '%d' % Node.idcounter
         Node.idcounter += 1
@@ -26,7 +28,10 @@ class Node:
 
         self.height = height
 
-        self.h_v = Variable(torch.rand(hsize,), requires_grad=grads).to(Node.device)
+        if h_v is not None:
+            self.h_v = h_v
+        else:
+            self.h_v = Variable(torch.rand(hsize,), requires_grad=grads).to(Node.device)
 
         if spec is not None:
             self.id = spec['id']
@@ -65,6 +70,14 @@ class Node:
 
 class Tree:
     device = None
+    resolution = None
+    readsize = None
+
+    @staticmethod
+    def init(device, resolution, readsize):
+        Tree.device = device
+        Tree.resolution = resolution
+        Tree.readsize = readsize
 
     @staticmethod
     def ve(root):
@@ -126,23 +139,18 @@ class Tree:
         return rec(root, rfunc)
 
     @staticmethod
-    def set_device(device):
-        Tree.device = device
-
-    @staticmethod
-    def readout_fill(root, rfunc, readsize=32, fill=16):
+    def readout_fill(root, rfunc):
         # readout but "zero padded" up to 'fill' units
 
-        def rec(node, rfunc, fill):
+        def rec(node):
             child_reads = []
             for child in node.children:
-                child_reads.append(rec(child, rfunc, fill))
-            while len(child_reads) < fill:
-                child_reads.append(torch.zeros(readsize).to(Tree.device))
-            child_reads = torch.stack(child_reads)
+                child_reads.append(rec(child))
+            while len(child_reads) < Tree.resolution:
+                child_reads.append(torch.zeros(Tree.readsize).to(Tree.device))
 
             return rfunc(node.h_v, child_reads)
-        return rec(root, rfunc, fill)
+        return rec(root)
 
     @staticmethod
     def send(root, mfunc):
@@ -180,28 +188,20 @@ class Tree:
         return
 
     @staticmethod
-    def spawn(root, readout, spawnfunc, noisefunc):
+    def spawn(root, spawnfunc, noisefunc, nodestruct):
+        def rec(node):
+            if len(node.children) == 0:
+                noise = noisefunc().to(Tree.device)
+                childspec = spawnfunc(noise, node.h_v)
+                child_hvs = torch.split(childspec, 1, dim=-1)
 
-        def rec(node, readout, spawnfunc, noisefunc):
-
-            child_spawns = []
-            for child in node.children:
-                cspn = rec(node, readout, spawnfunc, noisefunc)
-                child_spawns.append(cspn)
-
-            # TODO: Sample once at init? Node is drawn once...
-            noise = noisefunc() # sampling once per node
-            # TODO: spawnfunc itself is an RNN
-            #  It generates as long a sequence it desires
-            state = spawnfunc.init_hidden()
-            result = None
-
-            return {
-                'spawned': result,
-                'child_spawns': child_spawns,
-            }
-
-        return rec(root, readout, spawnfunc, noisefunc)
+                for hv in child_hvs:
+                    node = nodestruct(hv)
+                    root.add(node)
+            else:
+                for child in node.children:
+                    rec(child)
+        rec(root)
 
     @staticmethod
     def rasterize(root, imsize=64):
@@ -254,20 +254,21 @@ class TallFew(Node):
 
 from numpy.random import normal
 class Hanoi(Node):
-    def __init__(self, height=0, imsize=64, endh=None, parent=None):
-        super().__init__(height=height, grads=False, parent=parent)
+    def __init__(self, height=0, imsize=64, endh=None, parent=None, h_v=None):
+        super().__init__(height=height, grads=False, parent=parent, h_v=h_v)
 
         if endh is None:
             endh = randint(2, 4) # random height
             # endh /s= 2
             height = 0 # this is the root
 
-        width = imsize / (2 ** height)
-        maxw = imsize if self.parent is None else self.parent.h_v[2]
-        width = int(min(np.abs(normal(width, 7)), maxw))
-        center = imsize // 2
+        if h_v is None:
+            width = imsize / (2 ** height)
+            maxw = imsize if self.parent is None else self.parent.h_v[2]
+            width = int(min(np.abs(normal(width, 7)), maxw))
+            center = imsize // 2
 
-        self.h_v[:] = torch.tensor([center, center, width, width])
+            self.h_v[:] = torch.tensor([center, center, width, width]).to(Node.device)
 
         if height == endh:
             return

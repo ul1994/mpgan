@@ -89,7 +89,7 @@ class SpawnNet(nn.Module):
 		x = x.view(-1, self.basef, self.baseh, self.resolution)
 		x = self.convs(x)
 
-		x = x.view(-1, self.hsize, self.resolution)
+		x = x.view(self.hsize, self.resolution)
 		return x
 
 	def init_noise(self, size=None, batch=None, device='cpu'):
@@ -121,6 +121,7 @@ class ReadNet(nn.Module):
 		# Function of:
 		#  Collection of children readouts: (readsize x resolution)
 		#  h_v of self
+		r_children = torch.stack(r_children)
 
 		# flatten everything
 		if len(h_self.shape) <= 2:

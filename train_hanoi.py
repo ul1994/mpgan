@@ -30,8 +30,6 @@ from structs import *
 from models.arbtree import SpawnNet, ReadNet, DiscrimNet
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-Tree.set_device(device)    # tree-level operations
-Node.set_device(device)    # give device handle to nodes
 ZSIZE = 20
 BSIZE = 64
 HSIZE = 4      # hidden representation is simply the cx, cy, size dimensions
@@ -44,6 +42,8 @@ real_labels = Variable(torch.ones(bhalf, 1), requires_grad=False).to(device)
 fake_labels = Variable(torch.zeros(bhalf, 1), requires_grad=False).to(device)
 adversarial_loss = torch.nn.BCELoss().to(device)
 TARGET = Hanoi
+Tree.init(device, resolution=REZ, readsize=READSIZE)    # tree-level operations
+Node.init(device)    # give device handle to nodes
 
 '''
 Training Phases:
@@ -83,7 +83,6 @@ discrim_opt = optim.Adam([
 	{ 'params': discrim.parameters() },
 ], lr=2e-5, weight_decay=1e-4)
 
-
 for iter in range(1, n_iters + 1):
 	spawn.zero_grad()
 	readout.zero_grad()
@@ -91,35 +90,23 @@ for iter in range(1, n_iters + 1):
 	readouts = []
 	for bii in range(bhalf):
 		root = TARGET(endh=1)
-		R_G = Tree.readout_fill(root, readout, readsize=READSIZE, fill=REZ)
+		R_G = Tree.readout_fill(root, readout)
 		readouts.append(R_G)
-
 	real_readouts = torch.stack(readouts).to(device)
 
+	def nodestruct(child_hv):
+		return TARGET(endh=0, h_v=child_hv)
+
+	fake_readouts = []
 	for bii in range(bhalf):
 		root = TARGET(endh=0)
+		Tree.spawn(root, spawn, spawn.init_noise, nodestruct)
+		# Tree.show(root)
 
-		noise_sample = spawn.init_noise().to(device)
-		nodespec = spawn(noise_sample, root.h_v)
-		# Tree.spawn
-		# print(noise_sample.size())
-		break
-
-
-	break
-	fake_hs = spawn(noise_sample)
-
-	__fake_embeds = fake_hs.detach().cpu().numpy()
-	# fake_readouts = readout(fake_hs)
-	# fake_detached = readout(fake_hs.detach())
-
-	fake_readouts = fake_hs
-	fake_detached = fake_hs.detach()
-
-
-	# print(fake_readouts.size())
-	# print(real_readouts.size())
-	# assert False
+		R_G = Tree.readout_fill(root, readout)
+		fake_readouts.append(R_G)
+	fake_readouts = torch.stack(fake_readouts).to(device)
+	fake_detached = fake_readouts.detach()
 
 	if iter % 5  == 0:
 		print('[%d] Sample: %s  vs  %s' % (
