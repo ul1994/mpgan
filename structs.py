@@ -12,7 +12,7 @@ class Node:
 
     idcounter = 0
 
-    def __init__(self, height=0, hsize=4, spec=None, grads=False, parent=None):
+    def __init__(self, height=0, hsize=4, spec=None, grads=True, parent=None, device=None):
         self.parent = parent
         self.id = '%d' % Node.idcounter
         Node.idcounter += 1
@@ -119,7 +119,7 @@ class Tree:
         return rec(root, rfunc)
 
     @staticmethod
-    def readout_fill(root, rfunc, fill=16):
+    def readout_fill(root, rfunc, readsize=32, fill=16, device=None):
         # readout but "zero padded" up to 'fill' units
 
         def rec(node, rfunc, fill):
@@ -127,19 +127,10 @@ class Tree:
             for child in node.children:
                 child_reads.append(rec(child, rfunc, fill))
             while len(child_reads) < fill:
-                child_reads.append(torch.zeros(node.hsize))
+                child_reads.append(torch.zeros(readsize).to(device))
+            child_reads = torch.stack(child_reads)
 
-            # print('Collected')
-            # for vect in child_reads:
-            #     print(vect.size())
-
-            child_reads = Variable(
-                torch.transpose(
-                    torch.stack(child_reads),
-                    0,
-                    1))
-
-            return rfunc(node.h_v, child_reads)
+            return rfunc(node.h_v.to(device), child_reads.to(device))
         return rec(root, rfunc, fill)
 
     @staticmethod
@@ -206,9 +197,9 @@ class Tree:
         canvas = np.zeros((imsize, imsize))
 
         def rec(node, height):
-            cx, cy, ww, hh = node.h_v
-            topX, topY = cx - ww // 2, cy - hh // 2
-            canvas[topY:topY+hh, topX:topX+ww] = 1 * (1 - height * 0.1)
+            cx, cy, ww, hh = node.h_v.detach().cpu().numpy()
+            topX, topY = int(cx - ww // 2), int(cy - hh // 2)
+            canvas[topY:int(topY+hh), topX:int(topX+ww)] = 1 * (1 - height * 0.1)
 
             for child in node.children:
                 rec(child, height + 1)
@@ -262,10 +253,10 @@ class Hanoi(Node):
 
         width = imsize / (2 ** height)
         maxw = imsize if self.parent is None else self.parent.h_v[2]
-        width = int(min(np.abs(normal(width, 5)), maxw))
+        width = int(min(np.abs(normal(width, 7)), maxw))
         center = imsize // 2
 
-        self.h_v = np.array([center, center, width, width])
+        self.h_v[:] = torch.tensor([center, center, width, width])
 
         if height == endh:
             return
@@ -285,7 +276,7 @@ if __name__ == '__main__':
     # root = Tree.load('sample')
 
     for ii in range(5):
-        root = Hanoi()
+        root = Hanoi(endh=1)
         # Tree.show(root)
         canvas = Tree.rasterize(root)
         plt.figure()
