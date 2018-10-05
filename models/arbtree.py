@@ -50,47 +50,32 @@ class SpawnNet(nn.Module):
 			return ops
 
 
-		self.fflat = 16
-		basef = 4
-		baseres = 4
-		basedim = self.fflat * baseres
-		prevdim = basedim
-		dense_list = []
-		for lii in range(3):
-			din = zsize + hsize if lii == 0 else prevdim
-			dout = basedim
-			dense_list += [*fclayer(din, dout)]
+		basef = 32
+		baseh = 4
+		basedim = basef * baseh
+		self.basef = basef
+		self.baseh = baseh
 
-			if basedim < resolution * self.fflat:
-				prevdim = basedim
-				basedim *= 2
+		self.dense = nn.Sequential(*[
+			*fclayer(zsize + hsize, 128),
+			*fclayer(128, basedim * resolution),
+		])
 
-		self.dense = nn.Sequential(*dense_list)
-
-
-		# basef = 4
-		# prevf = basef
-		# conv_list = []
-		# for lii in range(1):
-		# 	fin = basef if lii == 0 else prefv
-		# 	fout = basef
-		# 	conv_list += [*conv2d(fin, fout, (1, 3), (0, 1))]
-
-		# 	# if basedim < resolution * self.fflat:
-		# 	# 	prevdim = basedim
-		# 	# 	basedim *= 2
 		upopt = [None, None, None]
 		for ii in range(3):
-			if basef < hsize:
-				upopt[ii] = (1, 2)
-				basef *= 2
+			if baseh < hsize:
+				upopt[ii] = (2, 1)
+				baseh *= 2
 
 		self.convs = nn.Sequential(
-			*conv2d(4, 4, (3, 1), (1, 0), upsamp=upopt[0]),
-			*conv2d(4, 4, (3, 1), (1, 0), upsamp=upopt[1]),
-			*conv2d(4, 1, (3, 1), (1, 0), upsamp=upopt[2]),
-			# *conv2d(128, 1, (1, 1), (0, 0), norm=False),
-			# nn.Sigmoid()
+			nn.BatchNorm2d(basef, 0.8),
+
+			*conv2d(32, 32, (3, 1), (1, 0), upsamp=upopt[0]),
+			*conv2d(32, 32, (3, 1), (1, 0), upsamp=upopt[1]),
+			*conv2d(32, 32, (3, 1), (1, 0), upsamp=upopt[2]),
+
+			*conv2d(32, 1, (1, 1), (0, 0), norm=False),
+			nn.Sigmoid()
 		)
 
 		self.noise_size = zsize
@@ -100,9 +85,8 @@ class SpawnNet(nn.Module):
 
 		x = self.dense(x)
 
-		fsize = int(self.fflat**0.5)
 		# dense output feeds into # filters and # hiddens
-		x = x.view(-1, fsize, fsize, self.resolution)
+		x = x.view(-1, self.basef, self.baseh, self.resolution)
 		x = self.convs(x)
 
 		x = x.view(-1, self.hsize, self.resolution)
@@ -189,50 +173,55 @@ class DiscrimNet(nn.Module):
 
 if __name__ == '__main__':
 
-	HSIZE = 32       # hidden dimension (internal represent: cx, cy, ww, hh)
-	REZ = 16         # resolution (max supported children per node)
-	READSIZE = 32   # output size of graph readout
-	ZSIZE = 5      # size of latent distribution
+	# HSIZE = 32       # hidden dimension (internal represent: cx, cy, ww, hh)
+	# REZ = 16         # resolution (max supported children per node)
+	# READSIZE = 32   # output size of graph readout
+	# ZSIZE = 5      # size of latent distribution
 
-	spawn = SpawnNet(hsize=HSIZE, zsize=ZSIZE, resolution=REZ)
 
-	# latent distribution representing P(children shapes | parent shape)
-	children_noise = spawn.init_noise()
-	random_parent_hv = spawn.init_noise(size=HSIZE)
-	print('Noise in :', children_noise[:5], '...')
-	print('H in     :', random_parent_hv[:5], '...')
-	children = spawn(children_noise, random_parent_hv)
-	print('Spawn out:', children.size())
+	def try_spawn(HSIZE = 32, REZ = 16, READSIZE = 32, ZSIZE = 5):
 
-	try:
-		assert children.size(1) == HSIZE
-		assert children.size(2) == REZ
-	except:
-		raise Exception(children.size())
+		spawn = SpawnNet(hsize=HSIZE, zsize=ZSIZE, resolution=REZ)
 
-	print()
-	print()
+		# latent distribution representing P(children shapes | parent shape)
+		children_noise = spawn.init_noise()
+		random_parent_hv = spawn.init_noise(size=HSIZE)
+		print('Noise in :', children_noise[:5], '...')
+		print('H in     :', random_parent_hv[:5], '...')
+		children = spawn(children_noise, random_parent_hv)
+		print('Spawn out:', children.size())
 
-	HSIZE = 4       # hidden dimension (internal represent: cx, cy, ww, hh)
-	REZ = 4         # resolution (max supported children per node)
-	READSIZE = 32   # output size of graph readout
-	ZSIZE = 5      # size of latent distribution
+		try:
+			assert children.size(1) == HSIZE
+			assert children.size(2) == REZ
+		except:
+			raise Exception(children.size())
 
-	spawn = SpawnNet(hsize=HSIZE, zsize=ZSIZE, resolution=REZ)
+		print()
 
-	# latent distribution representing P(children shapes | parent shape)
-	children_noise = spawn.init_noise()
-	random_parent_hv = spawn.init_noise(size=HSIZE)
-	print('Noise in :', children_noise[:5], '...')
-	print('H in     :', random_parent_hv[:5], '...')
-	children = spawn(children_noise, random_parent_hv)
-	print('Spawn out:', children.size())
+	try_spawn()
+	try_spawn(HSIZE = 4, REZ = 4, READSIZE = 32, ZSIZE = 5)
 
-	try:
-		assert children.size(1) == HSIZE
-		assert children.size(2) == REZ
-	except:
-		raise Exception(children.size())
+	# HSIZE = 4       # hidden dimension (internal represent: cx, cy, ww, hh)
+	# REZ = 4         # resolution (max supported children per node)
+	# READSIZE = 32   # output size of graph readout
+	# ZSIZE = 5      # size of latent distribution
+
+	# spawn = SpawnNet(hsize=HSIZE, zsize=ZSIZE, resolution=REZ)
+
+	# # latent distribution representing P(children shapes | parent shape)
+	# children_noise = spawn.init_noise()
+	# random_parent_hv = spawn.init_noise(size=HSIZE)
+	# print('Noise in :', children_noise[:5], '...')
+	# print('H in     :', random_parent_hv[:5], '...')
+	# children = spawn(children_noise, random_parent_hv)
+	# print('Spawn out:', children.size())
+
+	# try:
+	# 	assert children.size(1) == HSIZE
+	# 	assert children.size(2) == REZ
+	# except:
+	# 	raise Exception(children.size())
 
 
 	# discrim = DiscrimNet(readsize=READSIZE)
