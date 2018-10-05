@@ -138,29 +138,21 @@ class DiscrimNet(nn.Module):
 	def __init__(self, readsize=512):
 		super(DiscrimNet, self).__init__()
 
-		# def discriminator_block(in_filters, out_filters, stride=1, bn=True):
-		# 	block = [   nn.Conv1d(in_filters, out_filters, 3, stride, 1),
-		# 				nn.LeakyReLU(0.2, inplace=True),
-		# 				nn.Dropout(0.25)]
-		# 	if bn:
-		# 		block.append(nn.BatchNorm1d(out_filters, 0.8))
-		# 	return block
-
 		self.model = nn.Sequential(
-			nn.Linear(readsize, 512),
+			nn.Linear(readsize, 256),
 			nn.LeakyReLU(0.2, inplace=True),
 			nn.Dropout(0.25),
 
-			nn.Linear(512, 512),
+			nn.Linear(256, 256),
 			nn.LeakyReLU(0.2, inplace=True),
 			nn.Dropout(0.25),
 		)
 
 		# The height and width of downsampled image
 		self.adv_layer = nn.Sequential(
-			nn.Linear(512, 1024),
+			nn.Linear(256, 256),
 			nn.LeakyReLU(0.2, inplace=True),
-			nn.Linear(1024, 1),
+			nn.Linear(256, 1),
 			nn.Sigmoid()
 		)
 
@@ -179,70 +171,58 @@ if __name__ == '__main__':
 	# ZSIZE = 5      # size of latent distribution
 
 
-	def try_spawn(HSIZE = 32, REZ = 16, READSIZE = 32, ZSIZE = 5):
-
+	def try_spawn(HSIZE, REZ, READSIZE, ZSIZE):
+		print('Spawn:')
 		spawn = SpawnNet(hsize=HSIZE, zsize=ZSIZE, resolution=REZ)
 
 		# latent distribution representing P(children shapes | parent shape)
 		children_noise = spawn.init_noise()
 		random_parent_hv = spawn.init_noise(size=HSIZE)
-		print('Noise in :', children_noise[:5], '...')
-		print('H in     :', random_parent_hv[:5], '...')
+		print('  Noise in :', children_noise[:5], '...')
+		print('  H in     :', random_parent_hv[:5], '...')
 		children = spawn(children_noise, random_parent_hv)
-		print('Spawn out:', children.size())
+		print('  Spawn out:', children.size())
 
 		try:
 			assert children.size(1) == HSIZE
 			assert children.size(2) == REZ
 		except:
 			raise Exception(children.size())
-
 		print()
 
-	try_spawn()
-	try_spawn(HSIZE = 4, REZ = 4, READSIZE = 32, ZSIZE = 5)
+	def try_readout(HSIZE, REZ, READSIZE, ZSIZE):
+		print('Readout:')
 
-	# HSIZE = 4       # hidden dimension (internal represent: cx, cy, ww, hh)
-	# REZ = 4         # resolution (max supported children per node)
-	# READSIZE = 32   # output size of graph readout
-	# ZSIZE = 5      # size of latent distribution
+		children_readouts = Variable(torch.randn(REZ, READSIZE))
+		random_parent_hv = Variable(torch.randn(HSIZE))
 
-	# spawn = SpawnNet(hsize=HSIZE, zsize=ZSIZE, resolution=REZ)
+		readout = ReadNet(hsize=HSIZE, resolution=REZ, readsize=READSIZE)
 
-	# # latent distribution representing P(children shapes | parent shape)
-	# children_noise = spawn.init_noise()
-	# random_parent_hv = spawn.init_noise(size=HSIZE)
-	# print('Noise in :', children_noise[:5], '...')
-	# print('H in     :', random_parent_hv[:5], '...')
-	# children = spawn(children_noise, random_parent_hv)
-	# print('Spawn out:', children.size())
+		# node readout is function of: node-hv and children readouts
+		print('  Children in :', children_readouts.size())
+		print('  Parent in   :', random_parent_hv.size())
 
-	# try:
-	# 	assert children.size(1) == HSIZE
-	# 	assert children.size(2) == REZ
-	# except:
-	# 	raise Exception(children.size())
+		rg = readout(random_parent_hv, children_readouts)
+		print('  Readout     :', rg.size())
+		print()
 
+	def try_discrim(HSIZE, REZ, READSIZE, ZSIZE):
+		print('Discrim:')
 
-	# discrim = DiscrimNet(readsize=READSIZE)
-	# readout = ReadNet(hsize=HSIZE, resolution=REZ, readsize=READSIZE)
+		discrim_batch = Variable(torch.randn(7, READSIZE))
+		print('  Batch in :', discrim_batch.size())
 
+		discrim = DiscrimNet(readsize=READSIZE)
 
-	# out = model(noise, random_h)
-	# print('Spawn out:', out.size())
+		valid = discrim(discrim_batch)
 
-	# read = readout(random_h, out)
-	# print('Read out :', read.size())
+		print('  Valid out:', valid.size())
+		print()
 
-	# valid = discrim(read)
-	# print('Disc out:', valid.size())
+	try_spawn(HSIZE=32, REZ=16, READSIZE=32, ZSIZE=5)
 
-	# import sys
-	# sys.path.append('/home/ubuntu/mpgan')
-	# from structs import *
+	try_spawn(HSIZE=4, REZ=4, READSIZE=32, ZSIZE=5)
 
-	# readout = ReadNet(hsize=4, resolution=REZ, readsize=READSIZE)
-	# root = Hanoi(endh=1)
-	# R_G = Tree.readout_fill(root, readout, readsize=READSIZE, fill=REZ)
-	# print('Tree readout', R_G.size())
-	# print(R_G)
+	try_readout(HSIZE=32, REZ=16, READSIZE=32, ZSIZE=5)
+
+	try_discrim(HSIZE=32, REZ=16, READSIZE=32, ZSIZE=5)
