@@ -48,9 +48,9 @@ class SpawnNet(nn.Module):
 		self.baseh = baseh
 
 		self.dense = nn.Sequential(*[
-			*fclayer(zsize + self.hsize, 32),
-			*fclayer(32, 32),
-			*fclayer(32, baseh * self.resolution),
+			*fclayer(zsize + self.hsize, 128),
+			*fclayer(128, 128),
+			*fclayer(128, baseh * self.resolution),
 		])
 
 		self.noise_size = zsize
