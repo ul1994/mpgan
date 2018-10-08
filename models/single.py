@@ -48,9 +48,9 @@ class SpawnNet(nn.Module):
 		self.baseh = baseh
 
 		self.dense = nn.Sequential(*[
-			*fclayer(zsize + self.hsize, 64),
-			*fclayer(64, 64),
-			*fclayer(64, baseh * self.resolution),
+			*fclayer(zsize + self.hsize, 32),
+			*fclayer(32, 32),
+			*fclayer(32, baseh * self.resolution),
 		])
 
 		self.noise_size = zsize
@@ -62,6 +62,7 @@ class SpawnNet(nn.Module):
 
 		# dense output feeds into # filters and # hiddens
 		x = x.view(self.baseh, self.resolution)
+		# x = nn.Sigmoid()(x)
 		x = nn.Sigmoid()(x)
 		return x
 
@@ -82,11 +83,11 @@ class ReadNet(nn.Module):
 
 		flatres = hsize + (readsize * resolution)
 		self.model = nn.Sequential(
-			nn.Linear(flatres, 64),
+			nn.Linear(flatres, 128),
 			nn.LeakyReLU(0.2, inplace=True),
-			nn.Linear(64, 64),
-			nn.LeakyReLU(0.2, inplace=True),
-			nn.Linear(64, readsize),
+			# nn.Linear(128, 128),
+			# nn.LeakyReLU(0.2, inplace=True),
+			nn.Linear(128, readsize),
 			nn.Tanh()
 		)
 
@@ -117,11 +118,11 @@ class DiscrimNet(nn.Module):
 		self.model = nn.Sequential(
 			nn.Linear(readsize, 256),
 			nn.LeakyReLU(0.2, inplace=True),
-			nn.Dropout(0.25),
+			# nn.Dropout(0.25),
 
 			nn.Linear(256, 256),
 			nn.LeakyReLU(0.2, inplace=True),
-			nn.Dropout(0.25),
+			# nn.Dropout(0.25),
 		)
 
 		# The height and width of downsampled image

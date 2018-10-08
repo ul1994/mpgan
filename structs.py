@@ -29,6 +29,7 @@ class Node:
         self.height = height
 
         if h_v is not None:
+            # h_v is assumed to already be a torch tensor
             self.h_v = h_v
         else:
             self.h_v = Variable(torch.rand(hsize,), requires_grad=grads).to(Node.device)
@@ -204,13 +205,18 @@ class Tree:
         rec(root)
 
     @staticmethod
-    def rasterize(root, imsize=64):
+    def rasterize(root, imsize=64, denorm=None):
         canvas = np.zeros((imsize, imsize))
 
         def rec(node, height):
             cx, cy, ww, hh = node.h_v.detach().cpu().numpy()
-            topX, topY = int(cx - ww // 2), int(cy - hh // 2)
-            canvas[topY:int(topY+hh), topX:int(topX+ww)] = 1 * (1 - height * 0.1)
+            if denorm is not None:
+                cx = denorm(cx)
+                cy = denorm(cy)
+                ww = denorm(ww)
+                hh = denorm(hh)
+            topX, topY = cx - ww / 2, cy - hh / 2
+            canvas[int(topY):int(topY+hh), int(topX):int(topX+ww)] = 1 * (1 - height * 0.1)
 
             for child in node.children:
                 rec(child, height + 1)

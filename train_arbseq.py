@@ -77,14 +77,6 @@ discrim_opt = optim.Adam([
 # 	{ 'params': readout.parameters() },
 # ], lr=2e-6, weight_decay=1e-4)
 
-def score(guess, real):
-	guess = (guess.cpu() > 0.5).squeeze()\
-		.type(torch.FloatTensor)
-	correct = (guess == real.squeeze().cpu()).sum()
-	correct = correct.numpy() / guess.cpu().size(0)
-	assert correct <= 1.0
-	return correct
-
 def toEmbedding(string):
 	# (seqlen x batch x embedlen)
 	sample = [] # series of embeddings per t
