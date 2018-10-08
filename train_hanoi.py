@@ -73,7 +73,7 @@ discrim = DiscrimNet(readsize=READSIZE).to(device)
 # NOTE: dont tune readout here; it'll optimize to fool the discrim!
 gen_opt = optim.Adam([
 	{ 'params': spawn.parameters() },
-], lr=2e-5, weight_decay=1e-4)
+], lr=1e-4, weight_decay=1e-4)
 
 # Readout aligns with discriminator
 #  The goal of readout is to extract as much distinguishing info
@@ -81,12 +81,12 @@ gen_opt = optim.Adam([
 discrim_opt = optim.Adam([
 	# { 'params': readout.parameters() },
 	{ 'params': discrim.parameters() },
-], lr=2e-5, weight_decay=1e-4)
+], lr=1e-4, weight_decay=1e-4)
 
 readout_opt = optim.Adam([
 	{ 'params': readout.parameters() },
 	{ 'params': discrim.parameters() },
-], lr=2e-5, weight_decay=1e-4)
+], lr=1e-4, weight_decay=1e-4)
 
 def norml1(val):
 	# normalized under fixed resolution of 64x64
@@ -100,10 +100,12 @@ for iter in range(1, n_iters + 1):
 	readout.zero_grad()
 
 	readouts = []
+	real_trees = []
 	for bii in range(bhalf):
 		root = TARGET(endh=MAX_HEIGHT, normalize=norml1)
 		R_G = Tree.readout_fill(root, readout)
 		readouts.append(R_G)
+		real_trees.append(root)
 	real_readouts = torch.stack(readouts).to(device)
 
 	def nodestruct(child_hv):
@@ -150,7 +152,6 @@ for iter in range(1, n_iters + 1):
 	# else:
 	# 	discrim_opt.step()
 
-
 	sys.stdout.write('[%d] Generate/L: %.5f  Discrim/L : %.5f  Score: %.2f      \r' % (
 		iter,
 		gen_loss.item(),
@@ -159,6 +160,7 @@ for iter in range(1, n_iters + 1):
 	sys.stdout.flush()
 
 	if iter % 50 == 0 or iter == 1:
-		tile_samples('samples/hanoi_%d' % iter, fake_trees, denorm=denorml1)
+		tile_samples('samples/hanoi_fk_%d' % iter, fake_trees, denorm=denorml1)
+		tile_samples('samples/hanoi_rl_%d' % iter, real_trees, denorm=denorml1)
 
 print()
