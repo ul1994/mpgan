@@ -17,20 +17,15 @@ import numpy as np
 from operator import mul
 
 class SpawnNet(nn.Module):
-	# Function of steps' embedding, and sampling from noise Z.
-	#  Maintains an internal state for persistence
-
-	# Spawns arbitrary len seq:
-
-	def __init__(self, hsize, resolution=8, zsize=20):
+	def __init__(self, zsize=20):
 		super(SpawnNet, self).__init__()
 
-		# supports resolutions (# children): 4 ~ 16
-		# supports hsize (# hidden dim): 4 ~ 32
+		# supports resolutions (# children): 1
+		# supports hsize (# hidden dim): 4   (more needed??? for graph conv)
 
-		self.resolution = resolution
+		self.hsize = 4
+		self.resolution = 1
 		self.zsize = zsize
-		self.hsize = hsize
 
 		def fclayer(din, dout, upsamp=False):
 			ops = [
@@ -49,34 +44,14 @@ class SpawnNet(nn.Module):
 			if upsamp is not None: ops = [nn.Upsample(scale_factor=upsamp)] + ops
 			return ops
 
-
-		basef = 32
-		baseh = 4
-		basedim = basef * baseh
-		self.basef = basef
+		baseh = 4   # immediately infer M hidden values per child
 		self.baseh = baseh
 
 		self.dense = nn.Sequential(*[
-			*fclayer(zsize + hsize, 128),
-			*fclayer(128, basedim * resolution),
+			*fclayer(zsize + self.hsize, 64),
+			*fclayer(64, 64),
+			*fclayer(64, baseh * self.resolution),
 		])
-
-		upopt = [None, None, None]
-		for ii in range(3):
-			if baseh < hsize:
-				upopt[ii] = (2, 1)
-				baseh *= 2
-
-		self.convs = nn.Sequential(
-			nn.BatchNorm2d(basef, 0.8),
-
-			*conv2d(32, 32, (3, 1), (1, 0), upsamp=upopt[0]),
-			*conv2d(32, 32, (3, 1), (1, 0), upsamp=upopt[1]),
-			*conv2d(32, 32, (3, 1), (1, 0), upsamp=upopt[2]),
-
-			*conv2d(32, 1, (1, 1), (0, 0), norm=False),
-			nn.Sigmoid()
-		)
 
 		self.noise_size = zsize
 
@@ -86,10 +61,8 @@ class SpawnNet(nn.Module):
 		x = self.dense(x)
 
 		# dense output feeds into # filters and # hiddens
-		x = x.view(-1, self.basef, self.baseh, self.resolution)
-		x = self.convs(x)
-
-		x = x.view(self.hsize, self.resolution)
+		x = x.view(self.baseh, self.resolution)
+		x = nn.Sigmoid()(x)
 		return x
 
 	def init_noise(self, size=None, batch=None, device='cpu'):
@@ -102,16 +75,18 @@ class SpawnNet(nn.Module):
 			return noise
 
 class ReadNet(nn.Module):
-	def __init__(self, hsize, resolution=16, readsize=32):
+	def __init__(self, readsize=32):
 		super(ReadNet, self).__init__()
+		hsize = 4
+		resolution = 1
 
 		flatres = hsize + (readsize * resolution)
 		self.model = nn.Sequential(
-			nn.Linear(flatres, 512),
+			nn.Linear(flatres, 64),
 			nn.LeakyReLU(0.2, inplace=True),
-			nn.Linear(512, 512),
+			nn.Linear(64, 64),
 			nn.LeakyReLU(0.2, inplace=True),
-			nn.Linear(512, readsize),
+			nn.Linear(64, readsize),
 			nn.Tanh()
 		)
 
@@ -172,42 +147,36 @@ if __name__ == '__main__':
 	# ZSIZE = 5      # size of latent distribution
 
 
-	def try_spawn(HSIZE, REZ, READSIZE, ZSIZE):
+	def try_spawn(ZSIZE):
 		print('Spawn:')
-		spawn = SpawnNet(hsize=HSIZE, zsize=ZSIZE, resolution=REZ)
+		spawn = SpawnNet(zsize=ZSIZE)
 
 		# latent distribution representing P(children shapes | parent shape)
 		children_noise = spawn.init_noise()
-		random_parent_hv = spawn.init_noise(size=HSIZE)
-		print('  Noise in :', children_noise[:5], '...')
-		print('  H in     :', random_parent_hv[:5], '...')
+		random_parent_hv = spawn.init_noise(size=4)
+		print('  Noise in :', children_noise.size())
+		print('  H in     :', random_parent_hv.size())
 		children = spawn(children_noise, random_parent_hv)
 		print('  Spawn out:', children.size())
-
-		try:
-			assert children.size(1) == HSIZE
-			assert children.size(2) == REZ
-		except:
-			raise Exception(children.size())
 		print()
 
-	def try_readout(HSIZE, REZ, READSIZE, ZSIZE):
+	def try_readout(READSIZE, HSIZE=4):
 		print('Readout:')
 
-		children_readouts = Variable(torch.randn(REZ, READSIZE))
+		children_readouts = [Variable(torch.randn(READSIZE))]
 		random_parent_hv = Variable(torch.randn(HSIZE))
 
-		readout = ReadNet(hsize=HSIZE, resolution=REZ, readsize=READSIZE)
+		readout = ReadNet(readsize=READSIZE)
 
 		# node readout is function of: node-hv and children readouts
-		print('  Children in :', children_readouts.size())
+		print('  Children in :', len(children_readouts), children_readouts[0].size())
 		print('  Parent in   :', random_parent_hv.size())
 
 		rg = readout(random_parent_hv, children_readouts)
 		print('  Readout     :', rg.size())
 		print()
 
-	def try_discrim(HSIZE, REZ, READSIZE, ZSIZE):
+	def try_discrim(READSIZE):
 		print('Discrim:')
 
 		discrim_batch = Variable(torch.randn(7, READSIZE))
@@ -220,10 +189,8 @@ if __name__ == '__main__':
 		print('  Valid out:', valid.size())
 		print()
 
-	try_spawn(HSIZE=32, REZ=16, READSIZE=32, ZSIZE=5)
+	try_spawn(ZSIZE=5)
 
-	try_spawn(HSIZE=4, REZ=4, READSIZE=32, ZSIZE=5)
+	try_readout(READSIZE=16)
 
-	try_readout(HSIZE=32, REZ=16, READSIZE=32, ZSIZE=5)
-
-	try_discrim(HSIZE=32, REZ=16, READSIZE=32, ZSIZE=5)
+	try_discrim(READSIZE=16)
