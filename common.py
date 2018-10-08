@@ -2,6 +2,7 @@
 import torch
 import numpy as np
 from datasets.hanoi import *
+from structs import *
 
 def score(guess, real):
 	guess = (guess.cpu() > 0.5).squeeze()\
@@ -31,6 +32,8 @@ def tile_samples(name, roots, nsamples=4, denorm=None):
 			plt.subplot(nsamples, nsamples, ind+1)
 			plt.gca().set_yticklabels([])
 			plt.gca().set_xticklabels([])
+			hleaf = Tree.random_leaf(roots[ind]).h_v.detach().cpu().numpy().tolist()
+			plt.gca().set_title('(%.1f %.1f) [%.1f %.1f]' % tuple(hleaf))
 			plt.imshow(rasters[ind], cmap='gray', vmin=0, vmax=1)
 
 	plt.savefig('./%s.png' % name, bbox_inches='tight')

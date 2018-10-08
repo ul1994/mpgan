@@ -7,6 +7,7 @@ import torch.nn as nn
 from torch.autograd import Variable
 import torch.optim as optim
 import torch.nn.functional as F
+from random import randint
 
 class Node:
     device = None
@@ -224,6 +225,17 @@ class Tree:
         rec(root, 0)
 
         return canvas
+
+    @staticmethod
+    def random_leaf(root):
+        def rec(node):
+            if len(node.children) == 0:
+                return node
+
+            ind = randint(0, len(node.children)-1)
+            return rec(node.children[ind])
+
+        return rec(root)
 
 from random import shuffle, randint, random
 
