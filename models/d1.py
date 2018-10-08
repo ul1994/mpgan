@@ -25,19 +25,17 @@ class SpawnNet(nn.Module):
 
 		self.zsize = zsize
 
-		def fclayer(din, dout, upsamp=False):
+		def fclayer(din, dout, norm=True):
 			ops = [
 				nn.Linear(din, dout),
-				nn.LeakyReLU(0.2, inplace=True),
 			]
-			if upsamp: ops += [nn.Upsample(scale_factor=2)]
+			if norm: ops += [nn.ReLU()]
 			return ops
 
 		self.dense = nn.Sequential(*[
-			*fclayer(zsize, 5),
-			*fclayer(5, 5),
-			*fclayer(5, 1),
-			nn.Sigmoid(),
+			*fclayer(zsize, 32),
+			*fclayer(32, 32),
+			*fclayer(32, 1, norm=False),
 		])
 
 	def forward(self, zin):
@@ -45,10 +43,13 @@ class SpawnNet(nn.Module):
 		x = self.dense(x)
 		return x
 
-	def init_noise(self, batch, size=None, device='cpu'):
+	def init_noise(self, batch=None, size=None, device='cpu'):
 		# UNIFORM noise
 		if size is None: size = self.zsize
-		noise = Variable(torch.rand(batch, size).to(device))
+		if batch is None:
+			noise = Variable(torch.rand(size).to(device))
+		else:
+			noise = Variable(torch.rand(batch, size).to(device))
 		return noise
 
 class DiscrimNet(nn.Module):
@@ -56,12 +57,12 @@ class DiscrimNet(nn.Module):
 		super(DiscrimNet, self).__init__()
 
 		self.dense = nn.Sequential(
-			nn.Linear(1, 5),
-			nn.LeakyReLU(0.2, inplace=True),
+			nn.Linear(1, 32),
+			nn.ReLU(),
 
-			nn.Linear(5, 5),
-			nn.LeakyReLU(0.2, inplace=True),
-			nn.Linear(5, 1),
+			nn.Linear(32, 32),
+			nn.ReLU(),
+			nn.Linear(32, 1),
 			nn.Sigmoid()
 		)
 

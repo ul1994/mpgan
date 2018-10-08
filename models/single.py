@@ -27,21 +27,11 @@ class SpawnNet(nn.Module):
 		self.resolution = 1
 		self.zsize = zsize
 
-		def fclayer(din, dout, upsamp=False):
+		def fclayer(din, dout, norm=True):
 			ops = [
 				nn.Linear(din, dout),
-				nn.LeakyReLU(0.2, inplace=True),
 			]
-			if upsamp: ops += [nn.Upsample(scale_factor=2)]
-			return ops
-
-		def conv2d(fin, fout, kernel=(1, 3), padding=(1, 1), upsamp=None, norm=True):
-			ops = [
-				nn.Conv2d(fin, fout, kernel, 1, padding),
-				nn.LeakyReLU(0.2, inplace=True),
-			]
-			if norm: ops += [nn.BatchNorm2d(fout, 0.8),]
-			if upsamp is not None: ops = [nn.Upsample(scale_factor=upsamp)] + ops
+			if norm: ops += [nn.LeakyReLU(0.2, inplace=True)]
 			return ops
 
 		baseh = 4   # immediately infer M hidden values per child
@@ -50,7 +40,7 @@ class SpawnNet(nn.Module):
 		self.dense = nn.Sequential(*[
 			*fclayer(zsize + self.hsize, 128),
 			*fclayer(128, 128),
-			*fclayer(128, baseh * self.resolution),
+			*fclayer(128, baseh * self.resolution, norm=False),
 		])
 
 		self.noise_size = zsize
@@ -69,10 +59,10 @@ class SpawnNet(nn.Module):
 	def init_noise(self, size=None, batch=None, device='cpu'):
 		if size is None: size = self.noise_size
 		if batch is None:
-			noise = Variable(torch.randn(size).to(device))
+			noise = Variable(torch.rand(size).to(device))
 			return noise
 		else:
-			noise = Variable(torch.randn(batch, size).to(device))
+			noise = Variable(torch.rand(batch, size).to(device))
 			return noise
 
 class ReadNet(nn.Module):
