@@ -26,15 +26,16 @@ from torch.autograd import Variable
 import numpy as np
 from numpy.random import shuffle
 # from train_arbseq import score
-from structs import *
-from models.arbtree import SpawnNet, ReadNet, DiscrimNet
+from datasets.hanoi import *
+# from models.arbtree import SpawnNet, ReadNet, DiscrimNet
+from models.single import SpawnNet, ReadNet, DiscrimNet
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-ZSIZE = 20
+ZSIZE = 5
 BSIZE = 64
 HSIZE = 4      # hidden representation is simply the cx, cy, size dimensions
-REZ =  4       # maximal number of children supported
-READSIZE = 32  # size of node readout
+REZ =  1       # maximal number of children supported
+READSIZE = 16  # size of node readout
 LR = 2e-5
 n_iters = 100000
 bhalf = BSIZE // 2
@@ -44,6 +45,7 @@ adversarial_loss = torch.nn.BCELoss().to(device)
 TARGET = Hanoi
 Tree.init(device, resolution=REZ, readsize=READSIZE)    # tree-level operations
 Node.init(device)    # give device handle to nodes
+MAX_HEIGHT = 1         # where root is 0
 
 '''
 Training Phases:
@@ -64,10 +66,8 @@ Training Phases:
 
 '''
 
-spawn = SpawnNet(
-	hsize=HSIZE, zsize=ZSIZE, resolution=REZ).to(device)
-readout = ReadNet(
-	hsize=HSIZE, resolution=REZ, readsize=READSIZE).to(device)
+spawn = SpawnNet(zsize=ZSIZE).to(device)
+readout = ReadNet(readsize=READSIZE).to(device)
 discrim = DiscrimNet(readsize=READSIZE).to(device)
 
 # NOTE: dont tune readout here; it'll optimize to fool the discrim!
@@ -89,7 +89,7 @@ for iter in range(1, n_iters + 1):
 
 	readouts = []
 	for bii in range(bhalf):
-		root = TARGET(endh=1)
+		root = TARGET(endh=MAX_HEIGHT)
 		R_G = Tree.readout_fill(root, readout)
 		readouts.append(R_G)
 	real_readouts = torch.stack(readouts).to(device)
@@ -99,14 +99,15 @@ for iter in range(1, n_iters + 1):
 
 	fake_readouts = []
 	for bii in range(bhalf):
-		root = TARGET(endh=0)
+		root = TARGET(endh=MAX_HEIGHT - 1)
 		Tree.spawn(root, spawn, spawn.init_noise, nodestruct)
-		# Tree.show(root)
-
+		Tree.show(root)
 		R_G = Tree.readout_fill(root, readout)
 		fake_readouts.append(R_G)
 	fake_readouts = torch.stack(fake_readouts).to(device)
 	fake_detached = fake_readouts.detach()
+
+	break
 
 	if iter % 5  == 0:
 		print('[%d] Sample: %s  vs  %s' % (
