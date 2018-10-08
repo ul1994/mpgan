@@ -252,32 +252,6 @@ class TallFew(Node):
         for ii in range(nchild):
             self.add(TallFew(height=self.height+1, endh=endh))
 
-from numpy.random import normal
-class Hanoi(Node):
-    def __init__(self, height=0, imsize=64, endh=None, parent=None, h_v=None):
-        super().__init__(height=height, grads=False, parent=parent, h_v=h_v)
-
-        if endh is None:
-            endh = randint(2, 4) # random height
-            # endh /s= 2
-            height = 0 # this is the root
-
-        if h_v is None:
-            width = imsize / (2 ** height)
-            maxw = imsize if self.parent is None else self.parent.h_v[2]
-            width = int(min(np.abs(normal(width, 7)), maxw))
-            center = imsize // 2
-
-            self.h_v[:] = torch.tensor([center, center, width, width]).to(Node.device)
-
-        if height == endh:
-            return
-
-        # prob = random()
-        nchild = 1
-        for ii in range(nchild):
-            self.add(Hanoi(height=self.height+1, imsize=imsize, endh=endh, parent=self))
-
 if __name__ == '__main__':
     import matplotlib.pyplot as plt
 
