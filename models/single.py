@@ -31,7 +31,8 @@ class SpawnNet(nn.Module):
 			ops = [
 				nn.Linear(din, dout),
 			]
-			if norm: ops += [nn.LeakyReLU(0.2, inplace=True)]
+			# if norm: ops += [nn.LeakyReLU(0.2, inplace=True)]
+			if norm: ops += [nn.ReLU()]
 			return ops
 
 		baseh = 4   # immediately infer M hidden values per child
@@ -53,7 +54,7 @@ class SpawnNet(nn.Module):
 		# dense output feeds into # filters and # hiddens
 		x = x.view(self.baseh, self.resolution)
 		# x = nn.Sigmoid()(x)
-		x = nn.Sigmoid()(x)
+		# x = nn.Sigmoid()(x)
 		return x
 
 	def init_noise(self, size=None, batch=None, device='cpu'):
@@ -74,9 +75,11 @@ class ReadNet(nn.Module):
 		flatres = hsize + (readsize * resolution)
 		self.model = nn.Sequential(
 			nn.Linear(flatres, 128),
-			nn.LeakyReLU(0.2, inplace=True),
-			# nn.Linear(128, 128),
 			# nn.LeakyReLU(0.2, inplace=True),
+			nn.ReLU(),
+			nn.Linear(128, 128),
+			# nn.LeakyReLU(0.2, inplace=True),
+			nn.ReLU(),
 			nn.Linear(128, readsize),
 			nn.Tanh()
 		)
@@ -107,27 +110,20 @@ class DiscrimNet(nn.Module):
 
 		self.model = nn.Sequential(
 			nn.Linear(readsize, 256),
-			nn.LeakyReLU(0.2, inplace=True),
-			# nn.Dropout(0.25),
-
+			# nn.LeakyReLU(0.2, inplace=True),
+			nn.ReLU(),
 			nn.Linear(256, 256),
-			nn.LeakyReLU(0.2, inplace=True),
-			# nn.Dropout(0.25),
-		)
-
-		# The height and width of downsampled image
-		self.adv_layer = nn.Sequential(
+			# nn.LeakyReLU(0.2, inplace=True),
+			nn.ReLU(),
 			nn.Linear(256, 256),
-			nn.LeakyReLU(0.2, inplace=True),
+			# nn.LeakyReLU(0.2, inplace=True),
+			nn.ReLU(),
 			nn.Linear(256, 1),
 			nn.Sigmoid()
 		)
 
 	def forward(self, x):
 		x = self.model(x)
-
-		x = self.adv_layer(x)
-
 		return x
 
 if __name__ == '__main__':

@@ -36,8 +36,8 @@ if __name__ == '__main__':
 	parser.add_argument('--name', type=str)
 	parser.add_argument('--batch', default=64, type=int)
 	parser.add_argument('--iters', default=100 * 1000, type=int)
-	parser.add_argument('--readsize', default=32, type=int)
-	parser.add_argument('--zsize', default=20, type=int)
+	parser.add_argument('--readsize', default=64, type=int)
+	parser.add_argument('--zsize', default=10, type=int)
 	parser.add_argument('--lr', default=1e-4, type=float)
 	args = parser.parse_args()
 
@@ -122,6 +122,7 @@ if __name__ == '__main__':
 			return TARGET(endh=0, h_v=child_hv, normalize=norml1)
 
 		fake_readouts = []
+		fake_detached = []
 		fake_trees = []
 		for bii in range(bhalf):
 			root = TARGET(endh=MAX_HEIGHT - 1, normalize=norml1)
@@ -130,8 +131,12 @@ if __name__ == '__main__':
 			R_G = Tree.readout_fill(root, readout)
 			fake_readouts.append(R_G)
 			fake_trees.append(root)
+
+			R_G = Tree.readout_fill(root, readout, detach=True)
+			fake_detached.append(R_G)
 		fake_readouts = torch.stack(fake_readouts).to(device)
-		fake_detached = fake_readouts.detach()
+		fake_detached = torch.stack(fake_detached).to(device)
+		# print(readout.model[0].weight.data.detach().cpu().numpy()[0, :5])
 
 		# GENERATION PHASE
 
@@ -160,7 +165,7 @@ if __name__ == '__main__':
 		# if iter % 10 == 0:
 		readout_opt.step()
 		# else:
-		# 	discrim_opt.step()
+		# discrim_opt.step()
 
 		sys.stdout.write('[%d] Generate/L: %.5f  Discrim/L : %.5f  Score: %.2f      \r' % (
 			iter,

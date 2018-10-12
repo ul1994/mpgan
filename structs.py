@@ -141,7 +141,7 @@ class Tree:
         return rec(root, rfunc)
 
     @staticmethod
-    def readout_fill(root, rfunc):
+    def readout_fill(root, rfunc, detach=False):
         # readout but "zero padded" up to 'fill' units
 
         def rec(node):
@@ -151,7 +151,9 @@ class Tree:
             while len(child_reads) < Tree.resolution:
                 child_reads.append(torch.zeros(Tree.readsize).to(Tree.device))
 
-            return rfunc(node.h_v, child_reads)
+            return rfunc(
+                node.h_v if not detach else node.h_v.detach(),
+                child_reads)
         return rec(root)
 
     @staticmethod
