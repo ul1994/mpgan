@@ -91,12 +91,12 @@ if __name__ == '__main__':
 	discrim_opt = optim.Adam([
 		# { 'params': readout.parameters() },
 		{ 'params': discrim.parameters() },
-	], lr=1e-4, weight_decay=1e-4)
+	], lr=1e-3, weight_decay=1e-4)
 
 	readout_opt = optim.Adam([
 		{ 'params': readout.parameters() },
 		{ 'params': discrim.parameters() },
-	], lr=1e-4, weight_decay=1e-4)
+	], lr=1e-3, weight_decay=1e-4)
 
 	def norml1(val):
 		# normalized under fixed resolution of 64x64

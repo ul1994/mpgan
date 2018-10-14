@@ -39,9 +39,9 @@ class SpawnNet(nn.Module):
 		self.baseh = baseh
 
 		self.dense = nn.Sequential(*[
-			*fclayer(zsize + self.hsize, 128),
-			*fclayer(128, 128),
-			*fclayer(128, baseh * self.resolution, norm=False),
+			*fclayer(zsize + self.hsize, 256),
+			*fclayer(256, 256),
+			*fclayer(256, baseh * self.resolution, norm=False),
 		])
 
 		self.noise_size = zsize
@@ -74,13 +74,13 @@ class ReadNet(nn.Module):
 
 		flatres = hsize + (readsize * resolution)
 		self.model = nn.Sequential(
-			nn.Linear(flatres, 128),
+			nn.Linear(flatres, 64),
 			# nn.LeakyReLU(0.2, inplace=True),
 			nn.ReLU(),
-			nn.Linear(128, 128),
+			# nn.Linear(64, 64),
 			# nn.LeakyReLU(0.2, inplace=True),
-			nn.ReLU(),
-			nn.Linear(128, readsize),
+			# nn.ReLU(),
+			nn.Linear(64, readsize),
 			nn.Tanh()
 		)
 
@@ -111,8 +111,8 @@ class DiscrimNet(nn.Module):
 		self.model = nn.Sequential(
 			nn.Linear(readsize, 256),
 			# nn.LeakyReLU(0.2, inplace=True),
-			nn.ReLU(),
-			nn.Linear(256, 256),
+			# nn.ReLU(),
+			# nn.Linear(256, 256),
 			# nn.LeakyReLU(0.2, inplace=True),
 			nn.ReLU(),
 			nn.Linear(256, 256),
