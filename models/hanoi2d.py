@@ -11,10 +11,10 @@ import numpy as np
 from operator import mul
 
 class SpawnNet(nn.Module):
-	def __init__(self, zsize=1):
+	def __init__(self, hsize=4, zsize=4):
 		super(SpawnNet, self).__init__()
 
-		# noise in: uniform random
+		# noise in: 2 x uniform random
 		# layers: 5 -> 5 -> 1
 
 		self.zsize = zsize
@@ -27,13 +27,14 @@ class SpawnNet(nn.Module):
 			return ops
 
 		self.dense = nn.Sequential(*[
-			*fclayer(zsize, 32),
-			*fclayer(32, 32),
-			*fclayer(32, 1, norm=False),
+			*fclayer(hsize + zsize, 128),
+			*fclayer(128, 256),
+			*fclayer(256, 256),
+			*fclayer(256, hsize, norm=False),
 		])
 
-	def forward(self, zin):
-		x = zin
+	def forward(self, hparent, zvar):
+		x = torch.cat([hparent, zvar], -1)
 		x = self.dense(x)
 		return x
 
@@ -47,21 +48,26 @@ class SpawnNet(nn.Module):
 		return noise
 
 class DiscrimNet(nn.Module):
-	def __init__(self):
+	# input "readout" is concat of child inner values and parent values
+
+	def __init__(self, hsize=4):
 		super(DiscrimNet, self).__init__()
 
 		self.dense = nn.Sequential(
-			nn.Linear(1, 32),
+			nn.Linear(hsize * 2, 128),
 			nn.ReLU(),
 
-			nn.Linear(32, 32),
+			nn.Linear(128, 256),
 			nn.ReLU(),
-			nn.Linear(32, 1),
-			nn.Sigmoid()
+			nn.Linear(256, 256),
+			nn.ReLU(),
+			nn.Linear(256, 1),
 		)
 
-	def forward(self, x):
+	def forward(self, x, sigmoid=True):
 		x = self.dense(x)
+		if sigmoid:
+			x = nn.Sigmoid()(x)
 		return x
 
 if __name__ == '__main__':
@@ -73,26 +79,27 @@ if __name__ == '__main__':
 
 	def try_spawn():
 		print('Spawn:')
-		spawn = SpawnNet()
+		spawn = SpawnNet(hsize=4, zsize=4)
 
 		# latent distribution representing P(children shapes | parent shape)
-		unif_noise = spawn.init_noise(5)
-		print('  Noise in :', unif_noise.size())
-		out = spawn(unif_noise)
+		hrandom = Variable(torch.rand(5, 4))
+		unif_noise_many = spawn.init_noise(5, size=4)
+		print('  Noise in :', unif_noise_many.size())
+		print('  H parent :', hrandom.size())
+		out = spawn(hrandom, unif_noise_many)
 		print('  Spawn out:', out.size())
-		print('  ', unif_noise)
 		print('  ', out)
 		print()
 
 	def try_discrim():
 		print('Discrim:')
 
-		discrim_batch = Variable(torch.randn(7, 1))
-		print('  Batch in :', discrim_batch.size())
+		randreadout = Variable(torch.randn(7, 8))
+		print('  Readout in :', randreadout.size())
 
-		discrim = DiscrimNet()
+		discrim = DiscrimNet(hsize=4)
 
-		valid = discrim(discrim_batch)
+		valid = discrim(randreadout)
 
 		print('  Valid out:', valid.size())
 		print()

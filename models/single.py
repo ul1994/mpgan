@@ -1,10 +1,4 @@
 
-'''
-Model defined by Generator, Readout, and Discriminiator
-
-Matches distribution of sequence with agnostic ordering.
-'''
-
 from __future__ import print_function
 import argparse
 import torch
@@ -67,20 +61,20 @@ class SpawnNet(nn.Module):
 			return noise
 
 class ReadNet(nn.Module):
-	def __init__(self, readsize=32):
+	def __init__(self, readsize=32, hidden=64):
 		super(ReadNet, self).__init__()
 		hsize = 4
 		resolution = 1
 
 		flatres = hsize + (readsize * resolution)
 		self.model = nn.Sequential(
-			nn.Linear(flatres, 64),
+			nn.Linear(flatres, hidden),
 			# nn.LeakyReLU(0.2, inplace=True),
 			nn.ReLU(),
-			# nn.Linear(64, 64),
+			# nn.Linear(hidden, hidden),
 			# nn.LeakyReLU(0.2, inplace=True),
 			# nn.ReLU(),
-			nn.Linear(64, readsize),
+			nn.Linear(hidden, readsize),
 			nn.Tanh()
 		)
 
