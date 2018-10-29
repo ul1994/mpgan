@@ -33,7 +33,7 @@ class SpawnNet(nn.Module):
 			*fclayer(512, hsize, norm=False),
 		])
 
-	def forward(self, hparent, zvar):
+	def forward(self, hgraph, hparent, zvar):
 		x = torch.cat([hparent, zvar], -1)
 		x = self.dense(x)
 		return x
@@ -47,14 +47,33 @@ class SpawnNet(nn.Module):
 			noise = Variable(torch.rand(batch, size).to(device))
 		return noise
 
-class DiscrimNet(nn.Module):
-	# input "readout" is concat of child inner values and parent values
+class ReadNet(nn.Module):
+	# Takes in children hvects and current hvect to encode state at node
 
-	def __init__(self, hsize=4):
+	def __init__(self, hsize=4, readsize=32, hiddensize=64):
+		super(ReadNet, self).__init__()
+
+		self.dense = nn.Sequential(
+			nn.Linear(hsize * 2, hiddensize),
+			nn.ReLU(),
+			nn.Linear(hiddensize, hiddensize),
+			nn.ReLU(),
+			nn.Linear(hiddensize, readsize),
+		)
+
+	def forward(self, hv, hchild):
+		x = torch.cat([hv, hchild], -1)
+		x = self.dense(x)
+		return x
+
+class DiscrimNet(nn.Module):
+	# discriminates entire tree based on readout size
+
+	def __init__(self, readsize):
 		super(DiscrimNet, self).__init__()
 
 		self.dense = nn.Sequential(
-			nn.Linear(hsize * 2, 256),
+			nn.Linear(readsize, 256),
 			nn.ReLU(),
 
 			nn.Linear(256, 512),
@@ -64,10 +83,9 @@ class DiscrimNet(nn.Module):
 			nn.Linear(512, 1),
 		)
 
-	def forward(self, x, sigmoid=True):
+	def forward(self, x):
 		x = self.dense(x)
-		if sigmoid:
-			x = nn.Sigmoid()(x)
+		# No sigmoid is needed for wasserstein
 		return x
 
 if __name__ == '__main__':
@@ -82,13 +100,29 @@ if __name__ == '__main__':
 		spawn = SpawnNet(hsize=4, zsize=4)
 
 		# latent distribution representing P(children shapes | parent shape)
-		hrandom = Variable(torch.rand(5, 4))
+		hv = Variable(torch.rand(5, 4))
+		hchild = Variable(torch.rand(5, 4))
+
 		unif_noise_many = spawn.init_noise(5, size=4)
-		print('  Noise in :', unif_noise_many.size())
-		print('  H parent :', hrandom.size())
-		out = spawn(hrandom, unif_noise_many)
+		print('  H node  :', hv.size())
+		print('  H child :', hchild.size())
+		out = spawn(hv, hchild, unif_noise_many)
 		print('  Spawn out:', out.size())
 		print('  ', out)
+		print()
+
+	def try_read():
+		print('Read:')
+		reader = ReadNet(hsize=4, readsize=32)
+
+		# latent distribution representing P(children shapes | parent shape)
+		hv = Variable(torch.rand(5, 4))
+		hchild = Variable(torch.rand(5, 4))
+		print('  H node  :', hv.size())
+		print('  H child :', hchild.size())
+		
+		code = reader(hv, hchild)
+		print('  Read out:', code.size())
 		print()
 
 	def try_discrim():
@@ -105,5 +139,6 @@ if __name__ == '__main__':
 		print()
 
 	try_spawn()
+	try_read()
 
-	try_discrim()
+	# try_discrim()
