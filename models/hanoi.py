@@ -16,7 +16,6 @@ class SpawnNet(nn.Module):
 
 		# noise in: 2 x uniform random
 		# layers: 5 -> 5 -> 1
-
 		self.zsize = zsize
 
 		def fclayer(din, dout, norm=True):
@@ -128,10 +127,10 @@ if __name__ == '__main__':
 	def try_discrim():
 		print('Discrim:')
 
-		randreadout = Variable(torch.randn(7, 8))
+		randreadout = Variable(torch.randn(7, 32))
 		print('  Readout in :', randreadout.size())
 
-		discrim = DiscrimNet(hsize=4)
+		discrim = DiscrimNet(readsize=32)
 
 		valid = discrim(randreadout)
 
@@ -141,4 +140,4 @@ if __name__ == '__main__':
 	try_spawn()
 	try_read()
 
-	# try_discrim()
+	try_discrim()
