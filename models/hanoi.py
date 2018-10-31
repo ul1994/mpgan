@@ -11,11 +11,14 @@ import numpy as np
 from operator import mul
 
 class SpawnNet(nn.Module):
-	def __init__(self, hsize=4, zsize=4):
+	# Spawn is a function of
+	#  graph state
+	#  node encoding
+	#  noise
+	def __init__(self, readsize=32, hsize=4, zsize=4):
 		super(SpawnNet, self).__init__()
 
-		# noise in: 2 x uniform random
-		# layers: 5 -> 5 -> 1
+		
 		self.zsize = zsize
 
 		def fclayer(din, dout, norm=True):
@@ -26,14 +29,15 @@ class SpawnNet(nn.Module):
 			return ops
 
 		self.dense = nn.Sequential(*[
-			*fclayer(hsize + zsize, 256),
+			*fclayer(readsize + hsize + zsize, 256),
 			*fclayer(256, 512),
 			*fclayer(512, 512),
-			*fclayer(512, hsize, norm=False),
+			*fclayer(512, 1024),
+			*fclayer(1024, hsize, norm=False),
 		])
 
-	def forward(self, hgraph, hparent, zvar):
-		x = torch.cat([hparent, zvar], -1)
+	def forward(self, rg, hnode, zvar):
+		x = torch.cat([rg, hnode, zvar], -1)
 		x = self.dense(x)
 		return x
 
@@ -47,21 +51,21 @@ class SpawnNet(nn.Module):
 		return noise
 
 class ReadNet(nn.Module):
-	# Takes in children hvects and current hvect to encode state at node
+	# Takes in recursive readout and current hvect to encode state up to node
 
 	def __init__(self, hsize=4, readsize=32, hiddensize=64):
 		super(ReadNet, self).__init__()
 
 		self.dense = nn.Sequential(
-			nn.Linear(hsize * 2, hiddensize),
+			nn.Linear(hsize + readsize, hiddensize),
 			nn.ReLU(),
-			nn.Linear(hiddensize, hiddensize),
-			nn.ReLU(),
+			# nn.Linear(hiddensize, hiddensize),
+			# nn.ReLU(),
 			nn.Linear(hiddensize, readsize),
 		)
 
-	def forward(self, hv, hchild):
-		x = torch.cat([hv, hchild], -1)
+	def forward(self, hv, rochild):
+		x = torch.cat([hv, rochild], -1)
 		x = self.dense(x)
 		return x
 
@@ -77,9 +81,9 @@ class DiscrimNet(nn.Module):
 
 			nn.Linear(256, 512),
 			nn.ReLU(),
-			nn.Linear(512, 512),
+			nn.Linear(512, 1024),
 			nn.ReLU(),
-			nn.Linear(512, 1),
+			nn.Linear(1024, 1),
 		)
 
 	def forward(self, x):
@@ -96,16 +100,16 @@ if __name__ == '__main__':
 
 	def try_spawn():
 		print('Spawn:')
-		spawn = SpawnNet(hsize=4, zsize=4)
+		spawn = SpawnNet(hsize=4, zsize=4, readsize=32)
 
 		# latent distribution representing P(children shapes | parent shape)
 		hv = Variable(torch.rand(5, 4))
-		hchild = Variable(torch.rand(5, 4))
+		rg = Variable(torch.rand(5, 32))
 
 		unif_noise_many = spawn.init_noise(5, size=4)
 		print('  H node  :', hv.size())
-		print('  H child :', hchild.size())
-		out = spawn(hv, hchild, unif_noise_many)
+		print('  Graph read :', rg.size())
+		out = spawn(rg, hv, unif_noise_many)
 		print('  Spawn out:', out.size())
 		print('  ', out)
 		print()
@@ -116,11 +120,11 @@ if __name__ == '__main__':
 
 		# latent distribution representing P(children shapes | parent shape)
 		hv = Variable(torch.rand(5, 4))
-		hchild = Variable(torch.rand(5, 4))
+		rchild = Variable(torch.rand(5, 32))
 		print('  H node  :', hv.size())
-		print('  H child :', hchild.size())
+		print('  H child :', rchild.size())
 		
-		code = reader(hv, hchild)
+		code = reader(hv, rchild)
 		print('  Read out:', code.size())
 		print()
 
