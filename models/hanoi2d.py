@@ -27,8 +27,9 @@ class SpawnNet(nn.Module):
 			return ops
 
 		self.dense = nn.Sequential(*[
-			*fclayer(hsize + zsize, 256),
-			*fclayer(256, 512),
+			*fclayer(hsize + zsize, 512),
+			*fclayer(512, 512),
+			*fclayer(512, 512),
 			*fclayer(512, 512),
 			*fclayer(512, hsize, norm=False),
 		])
@@ -54,10 +55,12 @@ class DiscrimNet(nn.Module):
 		super(DiscrimNet, self).__init__()
 
 		self.dense = nn.Sequential(
-			nn.Linear(hsize * 2, 256),
+			nn.Linear(hsize * 2, 512),
 			nn.ReLU(),
 
-			nn.Linear(256, 512),
+			nn.Linear(512, 512),
+			nn.ReLU(),
+			nn.Linear(512, 512),
 			nn.ReLU(),
 			nn.Linear(512, 512),
 			nn.ReLU(),
