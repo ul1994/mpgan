@@ -31,13 +31,15 @@ class SpawnNet(nn.Module):
 			*fclayer(512, (hsize + 1) * rez, norm=False),
 		])
 
-	def forward(self, hparent, zvar):
+	def forward(self, hparent, zvar, concat=True):
 		x = torch.cat([hparent, zvar], -1)
 		x = self.dense(x)
 		x = x.view((-1, self.rez, (self.hsize + 1)))
 		# return x
 
 		hout, hact = x[:, :, :2], torch.sigmoid(x[:, :, 2])
+		if concat:
+			return torch.cat([hout, hact.unsqueeze(2)], -1)
 		return hout, hact
 
 	def init_noise(self, batch=None, size=None, device='cpu'):
@@ -69,10 +71,10 @@ class DiscrimNet(nn.Module):
 			nn.Linear(512, 1),
 		)
 
-	def forward(self, himage, hact, sigmoid=True):
+	def forward(self, himage, sigmoid=True):
 
-		x = torch.cat([himage, hact.unsqueeze(2)], -1)
-		x = x.view(-1, (self.hsize + 1) * self.rez)
+		# x = torch.cat([himage, hact.unsqueeze(2)], -1)
+		x = himage.view(-1, (self.hsize + 1) * self.rez)
 		# TODO: mask himage according to hact
 
 		x = self.dense(x)
